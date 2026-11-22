@@ -20,8 +20,8 @@ public record RepoRef(String owner, String name) {
       throw new InvalidRepoUrlException("저장소 주소가 비었습니다");
     }
     String s = input.strip().split("[?#]", 2)[0];
-    s = s.replaceFirst("^https?://", "").replaceFirst("^www\\.", "");
-    if (!s.startsWith(HOST)) {
+    s = s.replaceFirst("(?i)^https?://", "").replaceFirst("(?i)^www\\.", "");
+    if (!s.regionMatches(true, 0, HOST, 0, HOST.length())) {
       throw new InvalidRepoUrlException("github.com 저장소 주소만 받습니다");
     }
     String[] parts = s.substring(HOST.length()).split("/");

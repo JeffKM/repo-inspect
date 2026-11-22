@@ -163,6 +163,21 @@ class GitHubClientTest {
   }
 
   @Test
+  void 아주_큰_Retry_After_와_reset_은_1시간으로_자른다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(429)
+        .withHeader("retry-after", "99999999999999")));
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(3600)));
+
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "0").withHeader("x-ratelimit-reset", "99999999999999")));
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(3600)));
+  }
+
+  @Test
   void 숫자가_아닌_Retry_After_는_기본_60초로_처리한다() {
     server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(429)
         .withHeader("retry-after", "Wed, 21 Oct 2015 07:28:00 GMT")));

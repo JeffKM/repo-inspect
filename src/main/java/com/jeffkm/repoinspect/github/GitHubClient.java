@@ -24,6 +24,7 @@ public class GitHubClient implements GitHubSource {
 
   private static final Duration META_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration TARBALL_TIMEOUT = Duration.ofSeconds(60);
+  private static final long MAX_WAIT_SECONDS = 3600;
   private static final Duration DEFAULT_RETRY = Duration.ofSeconds(60);
 
   private final GitHubProperties props;
@@ -152,10 +153,10 @@ public class GitHubClient implements GitHubSource {
     try {
       Optional<String> retryAfter = res.headers().firstValue("retry-after");
       if (retryAfter.isPresent()) {
-        at = now.plusSeconds(Long.parseLong(retryAfter.get().strip()));
+        at = now.plusSeconds(Math.min(Long.parseLong(retryAfter.get().strip()), MAX_WAIT_SECONDS));
       } else {
         at = res.headers().firstValue("x-ratelimit-reset")
-            .map(v -> Instant.ofEpochSecond(Long.parseLong(v.strip())))
+            .map(v -> Instant.ofEpochSecond(Math.min(Long.parseLong(v.strip()), now.getEpochSecond() + MAX_WAIT_SECONDS)))
             .orElse(fallback);
       }
     } catch (NumberFormatException e) {

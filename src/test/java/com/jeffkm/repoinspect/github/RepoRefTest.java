@@ -20,7 +20,9 @@ class RepoRefTest {
       "https://github.com/acme/tool/tree/main/src",
       "https://github.com/acme/tool?tab=readme-ov-file",
       "https://github.com/acme/tool#install",
-      "  https://github.com/acme/tool  "
+      "  https://github.com/acme/tool  ",
+      "HTTPS://GitHub.com/acme/tool",
+      "Https://WWW.GITHUB.COM/acme/tool"
   })
   void 여러_모양의_주소에서_소유자와_이름을_꺼낸다(String input) {
     assertThat(RepoRef.parse(input)).isEqualTo(new RepoRef("acme", "tool"));
