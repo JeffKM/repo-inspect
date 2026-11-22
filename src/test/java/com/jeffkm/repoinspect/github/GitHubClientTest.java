@@ -1,6 +1,8 @@
 package com.jeffkm.repoinspect.github;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
@@ -11,8 +13,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.http.Fault;
 import com.jeffkm.repoinspect.archive.LimitExceededException;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -224,5 +229,74 @@ class GitHubClientTest {
         .withBody("{\"message\": \"Git Repository is empty.\"}")));
 
     assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO)).isInstanceOf(EmptyRepositoryException.class);
+  }
+
+  @Test
+  void openTarball_은_SHA_형식이_아니면_요청하지_않는다() {
+    assertThatThrownBy(() -> client("", 1000).openTarball(REPO, "../../x")).isInstanceOf(IllegalArgumentException.class);
+    assertThat(server.findAll(anyRequestedFor(anyUrl()))).isEmpty();
+  }
+
+  @Test
+  void file_주소로의_리다이렉트는_거절한다() {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(302)
+        .withHeader("Location", "file:///etc/passwd")));
+
+    assertThatThrownBy(() -> client("", 1000).openTarball(REPO, SHA)).isInstanceOf(GitHubException.class);
+  }
+
+  @Test
+  void 리다이렉트는_http_https_만_허용하고_https_에서_http_로_내려가지_않는다() {
+    assertThat(GitHubClient.allowedRedirect(URI.create("https://api.github.com/a"),
+        URI.create("https://codeload.github.com/b"))).isTrue();
+    assertThat(GitHubClient.allowedRedirect(URI.create("http://127.0.0.1:1/a"), URI.create("http://127.0.0.1:1/b")))
+        .isTrue();
+    assertThat(GitHubClient.allowedRedirect(URI.create("https://api.github.com/a"),
+        URI.create("http://codeload.github.com/b"))).isFalse();
+    assertThat(GitHubClient.allowedRedirect(URI.create("https://api.github.com/a"), URI.create("file:///etc/passwd")))
+        .isFalse();
+  }
+
+  @Test
+  void 음수_대기_값은_지금으로_올린다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(429)
+        .withHeader("retry-after", "-9223372036854775808")));
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class, e -> assertThat(e.resetAt()).isEqualTo(NOW));
+
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "0").withHeader("x-ratelimit-reset", "-9223372036854775808")));
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class, e -> assertThat(e.resetAt()).isEqualTo(NOW));
+  }
+
+  @Test
+  void 같은_호스트_리다이렉트는_토큰을_유지한다() throws Exception {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(302)
+        .withHeader("Location", server.baseUrl() + "/codeload/acme/tool/" + SHA)));
+    server.stubFor(get("/codeload/acme/tool/" + SHA).willReturn(aResponse().withStatus(200).withBody("t")));
+
+    try (InputStream in = client("secret", 1000).openTarball(REPO, SHA)) {
+      in.readAllBytes();
+    }
+
+    assertThat(server.findAll(getRequestedFor(urlEqualTo("/codeload/acme/tool/" + SHA))).get(0)
+        .getHeader("Authorization")).isEqualTo("Bearer secret");
+  }
+
+  @Test
+  void 서버_오류는_상태_코드를_담은_GitHubException() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(503)));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(GitHubException.class, e -> assertThat(e.status()).isEqualTo(503));
+  }
+
+  @Test
+  void 연결이_끊기면_원인을_담은_GitHubException() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOf(GitHubException.class).hasCauseInstanceOf(IOException.class);
   }
 }

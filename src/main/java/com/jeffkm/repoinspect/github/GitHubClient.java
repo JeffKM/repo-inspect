@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -25,6 +26,7 @@ public class GitHubClient implements GitHubSource {
   private static final Duration META_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration TARBALL_TIMEOUT = Duration.ofSeconds(60);
   private static final long MAX_WAIT_SECONDS = 3600;
+  private static final Pattern SHA_FORMAT = Pattern.compile("[0-9a-f]{40}");
   private static final Duration DEFAULT_RETRY = Duration.ofSeconds(60);
 
   private final GitHubProperties props;
@@ -54,7 +56,7 @@ public class GitHubClient implements GitHubSource {
     HttpResponse<String> commit =
         send(request(commitPath, "application/vnd.github.sha", META_TIMEOUT), BodyHandlers.ofString());
     String sha = commit.body().strip();
-    if (!sha.matches("[0-9a-f]{40}")) {
+    if (!SHA_FORMAT.matcher(sha).matches()) {
       throw new GitHubException(commit.statusCode(), "커밋 SHA 형식이 아닙니다");
     }
     return sha;
@@ -62,6 +64,10 @@ public class GitHubClient implements GitHubSource {
 
   @Override
   public InputStream openTarball(RepoRef repo, String sha) {
+    // SHA 는 URL 경로에 들어간다. 형식이 아니면 요청을 만들지 않는다
+    if (sha == null || !SHA_FORMAT.matcher(sha).matches()) {
+      throw new IllegalArgumentException("커밋 SHA 형식이 아닙니다");
+    }
     String path = "/repos/%s/%s/tarball/%s".formatted(repo.owner(), repo.name(), sha);
     HttpResponse<InputStream> res =
         send(request(path, "application/vnd.github+json", TARBALL_TIMEOUT), BodyHandlers.ofInputStream());
@@ -90,7 +96,15 @@ public class GitHubClient implements GitHubSource {
       if (location.isEmpty()) {
         throw new GitHubException(res.statusCode(), "리다이렉트 위치가 없습니다");
       }
-      URI target = req.uri().resolve(location.get().strip());
+      URI target;
+      try {
+        target = req.uri().resolve(location.get().strip());
+      } catch (IllegalArgumentException e) {
+        throw new GitHubException(res.statusCode(), "리다이렉트 위치가 올바르지 않습니다", e);
+      }
+      if (!allowedRedirect(req.uri(), target)) {
+        throw new GitHubException(res.statusCode(), "허용하지 않는 리다이렉트입니다");
+      }
       res = exchange(redirected(req, target), handler);
       if (isRedirect(res.statusCode())) {
         closeQuietly(res.body());
@@ -127,6 +141,15 @@ public class GitHubClient implements GitHubSource {
     }
   }
 
+  /** http/https 만, 그리고 https 에서 http 로 내려가는 것은 막는다(압축 파일이 평문으로 바뀌지 않게). */
+  static boolean allowedRedirect(URI from, URI to) {
+    String scheme = to.getScheme();
+    if (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme)) {
+      return false;
+    }
+    return !("https".equalsIgnoreCase(from.getScheme()) && "http".equalsIgnoreCase(scheme));
+  }
+
   private static boolean isRedirect(int status) {
     return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
   }
@@ -156,10 +179,12 @@ public class GitHubClient implements GitHubSource {
     try {
       Optional<String> retryAfter = res.headers().firstValue("retry-after");
       if (retryAfter.isPresent()) {
-        at = now.plusSeconds(Math.min(Long.parseLong(retryAfter.get().strip()), MAX_WAIT_SECONDS));
+        long seconds = Long.parseLong(retryAfter.get().strip());
+        at = now.plusSeconds(Math.max(0, Math.min(seconds, MAX_WAIT_SECONDS)));
       } else {
+        long nowSec = now.getEpochSecond();
         at = res.headers().firstValue("x-ratelimit-reset")
-            .map(v -> Instant.ofEpochSecond(Math.min(Long.parseLong(v.strip()), now.getEpochSecond() + MAX_WAIT_SECONDS)))
+            .map(v -> Instant.ofEpochSecond(Math.max(nowSec, Math.min(Long.parseLong(v.strip()), nowSec + MAX_WAIT_SECONDS))))
             .orElse(fallback);
       }
     } catch (NumberFormatException e) {
