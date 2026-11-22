@@ -23,7 +23,6 @@ public final class PermissionRules {
       Rule.of("py.subprocess", SHELL_EXEC, "\\bsubprocess\\.(run|call|Popen|check_output|check_call)\\b", CODE),
       Rule.of("py.os_system", SHELL_EXEC, "\\bos\\.(system|popen)\\s*\\(", CODE),
       Rule.of("java.runtime_exec", SHELL_EXEC, "Runtime\\.getRuntime\\(\\)\\.exec|new\\s+ProcessBuilder\\b", CODE),
-      Rule.onlyIn("SKILL.md", "skill.allowed_tools_bash", SHELL_EXEC, "(?i)^allowed-tools:.*\\bBash\\b"),
 
       Rule.of("path.ssh", FILE_ACCESS, "~/\\.ssh|\\.ssh/id_", CODE, INSTRUCTION, CONFIG),
       Rule.of("path.aws", FILE_ACCESS, "~/\\.aws|\\.aws/credentials", CODE, INSTRUCTION, CONFIG),
@@ -39,7 +38,11 @@ public final class PermissionRules {
       Rule.of("env.dotenv", SECRETS, "\\bdotenv\\b|[\"']\\.env[\"']", CODE),
 
       Rule.onlyIn("package.json", "npm.lifecycle", INSTALL_SCRIPT, "\"(preinstall|install|postinstall)\"\\s*:"),
-      Rule.of("pipe.to_shell", INSTALL_SCRIPT, "(curl|wget)[^\\n|]{0,500}\\|\\s*(ba|z)?sh\\b",
+      Rule.of("pipe.to_shell", INSTALL_SCRIPT,
+          "(curl|wget)[^\\n|]{0,500}\\|\\s*(sudo\\s+(-[A-Za-z]+\\s+){0,3})?(ba|z)?sh\\b",
+          CODE, INSTRUCTION, CONFIG, DOC),
+      Rule.of("pipe.shell_subst", INSTALL_SCRIPT,
+          "\\b(ba|z)?sh\\s+(<\\(\\s*|-c\\s+[\"']?\\$\\(\\s*)(curl|wget)\\b",
           CODE, INSTRUCTION, CONFIG, DOC),
 
       Rule.of("js.eval", OBFUSCATION, "\\beval\\s*\\(|new\\s+Function\\s*\\(", CODE),

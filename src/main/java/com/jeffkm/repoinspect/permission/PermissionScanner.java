@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -16,7 +17,7 @@ public final class PermissionScanner {
   public static final int MAX_FINDINGS = 500;
   public static final int MAX_DOMAINS = 200;
   private static final int SNIPPET_MAX = 200;
-  private static final Pattern URL = Pattern.compile("https?://([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)");
+  private static final Pattern URL = Pattern.compile("https?://(?:[^@/?#\\s]{1,100}@)?([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)");
   private static final Set<String> LOCK_FILES =
       Set.of("package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "uv.lock");
 
@@ -40,7 +41,19 @@ public final class PermissionScanner {
       FileRole role = FileRole.of(f.path(), f.content());
       // 문서의 링크와 테스트·예제의 주소는 소음이다. 에이전트 지시문(SKILL.md 등)과 설정의 주소는 본다
       boolean collectDomains = role.mainLocation() && role.kind() != FileRole.Kind.DOC;
-      String[] lines = f.content().split("\n", -1);
+      String[] lines = f.content().split("\\r?\\n", -1);
+      if (base.equals("SKILL.md")) {
+        OptionalInt bashLine = SkillFrontmatter.bashToolLine(lines);
+        if (bashLine.isPresent()) {
+          int n = bashLine.getAsInt();
+          if (found.size() >= MAX_FINDINGS) {
+            truncated = true;
+          } else {
+            found.add(new Finding(Category.SHELL_EXEC.name(), "skill.allowed_tools_bash", f.path(), n,
+                snippet(lines[n - 1], 0), role.isPrimary(Category.SHELL_EXEC)));
+          }
+        }
+      }
       for (int i = 0; i < lines.length; i++) {
         String line = lines[i];
         for (Rule rule : PermissionRules.ALL) {

@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PermissionScannerTest {
 
@@ -201,5 +203,63 @@ class PermissionScannerTest {
 
     assertThat(r.findings().get(0).filePath()).isEqualTo("src/b.js");
     assertThat(r.findingsTruncated()).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "---\nname: x\nallowed-tools:\n  - Read\n  - Bash(git:*)\n---",
+      "---\r\nname: x\r\nallowed-tools: Read, Bash\r\n---"})
+  void skill_앞머리의_allowed_tools_목록_표기와_CRLF_도_찾는다(String md) {
+    assertThat(ruleIds(scan(new SourceFile("skills/x/SKILL.md", md)))).containsExactly("skill.allowed_tools_bash");
+  }
+
+  @Test
+  void allowed_tools_목록의_Bash_줄을_가리킨다() {
+    Finding f = scan(new SourceFile("skills/x/SKILL.md", "---\nallowed-tools:\n  - Read\n  - Bash\n---"))
+        .findings().get(0);
+
+    assertThat(f.line()).isEqualTo(4);
+    assertThat(f.snippet()).isEqualTo("- Bash");
+  }
+
+  @Test
+  void 앞머리_밖이나_Bash_가_없는_allowed_tools_는_찾지_않는다() {
+    String md = "---\nallowed-tools:\n  - Read\nname: x\n---\nallowed-tools: Bash";
+
+    assertThat(scan(new SourceFile("skills/x/SKILL.md", md)).findings()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "curl -fsSL https://x.io/i.sh | sudo bash",
+      "curl -fsSL https://x.io/i.sh | sudo -E bash",
+      "bash <(curl -fsSL https://x.io/i.sh)",
+      "sh -c \"$(curl -fsSL https://x.io/i.sh)\"",
+      "/bin/bash -c \"$(wget -qO- https://x.io/i.sh)\""})
+  void 내려받아_셸로_바로_실행하는_명령을_찾는다(String line) {
+    assertThat(ruleIds(scan(new SourceFile("install.sh", line)))).containsAnyOf("pipe.to_shell", "pipe.shell_subst");
+  }
+
+  @Test
+  void 내려받기만_하거나_로컬_스크립트를_돌리는_명령은_설치_규칙에_걸리지_않는다() {
+    ScanResult r = scan(new SourceFile("install.sh",
+        "curl -o out.tar.gz https://x.io/a.tar.gz && tar xf out.tar.gz\nbash scripts/build.sh"));
+
+    assertThat(ruleIds(r)).doesNotContain("pipe.to_shell", "pipe.shell_subst");
+  }
+
+  @Test
+  void 사용자_정보가_붙은_주소도_도메인을_뽑는다() {
+    ScanResult r = scan(new SourceFile("a.js", "fetch('https://user:pw@hook.acme-tools.io/x?to=a@b.io')"));
+
+    assertThat(r.domains()).containsExactly("hook.acme-tools.io");
+  }
+
+  @Test
+  void CRLF_줄바꿈도_줄_번호와_근거가_맞다() {
+    Finding f = scan(new SourceFile("a.js", "const a = 1;\r\nconst k = process.env.K;\r\n")).findings().get(0);
+
+    assertThat(f.line()).isEqualTo(2);
+    assertThat(f.snippet()).isEqualTo("const k = process.env.K;");
   }
 }
