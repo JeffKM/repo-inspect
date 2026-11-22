@@ -218,3 +218,16 @@ GitHub API(REST 압축 파일, GraphQL 스타 표본) / Scorecard API / LLM API
 - 오류 응답은 모두 ApiResponse로 감싼다.
 - 도메인 목록은 200개까지만 담고, 넘으면 `domainsTruncated`로 표시한다.
 - 실패(FAILED)한 커밋을 30분이 지난 뒤 다시 요청하면 대기열에 다시 넣는다. 시도 횟수(펜싱 값)는 되돌리지 않고 `attempt_base`로 회차를 나눠, 시도 상한 3회는 회차마다 다시 센다.
+
+## 16. 구현에서 달라진 점(계획 2)
+
+- 파일마다 종류(코드, 에이전트 지시문, 설정, 문서)와 위치(본 위치, 테스트·예제·문서 폴더)를 정하고, 코드 문법 규칙(eval, fetch, process.env 등)은 코드 파일에만 건다. `src/main` 아래 폴더 이름은 패키지 이름이라 위치 판단에 쓰지 않는다.
+- 근거는 지우지 않고 주요와 참고로 나눈다. 테스트·예제·문서 폴더와 `.github`의 근거는 참고다. 문서의 설치 명령(curl | bash)은 본 위치면 주요다.
+- 도메인 목록은 본 위치의 코드·지시문·설정에서만 모은다.
+- 결과에 범주별 주요 근거 수(`primaryCounts`)와 참고 근거 수(`secondaryFindings`)를 담는다. 근거 상한 500개는 본 위치 파일부터 채운다.
+- SKILL.md의 `allowed-tools`는 앞머리에서만, 한 줄 표기와 목록 표기를 모두 본다.
+- `| sudo bash`, `bash <(curl …)`, `sh -c "$(curl …)"`도 설치 명령으로 찾는다.
+- MCP 서버 판별은 package.json 의존성 필드, 파이썬 개발 의존성(dependency-groups, uv, poetry), requirements 변형 파일, fastmcp까지 넓혔다.
+- FIFO·장치 항목은 읽지 않고, 서브모듈은 분석하지 않은 부분으로 알린다(`submodules`).
+- 빈 저장소는 요청 시점에 409로 답한다.
+- GitHub 리다이렉트는 http/https만, https에서 http로는 따라가지 않는다.
