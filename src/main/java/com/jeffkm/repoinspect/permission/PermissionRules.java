@@ -48,8 +48,9 @@ public final class PermissionRules {
 
       Rule.of("js.eval", OBFUSCATION, "\\beval\\s*\\(|new\\s+Function\\s*\\(", CODE),
       // 이미지 data URI 와 노트북 출력 이미지는 소음이라 뺀다. 실행 코드를 담는 data:text/javascript 같은 것은 그대로 잡는다
+      // shortcut: 이미지 접두 뒤 덩어리는 내용을 보지 않고 건너뛴다. 접두만 붙여 페이로드를 숨기는 경우는 못 잡는다. 디코드 검사가 필요해지면 바꾼다
       Rule.of("long.base64", OBFUSCATION,
-          "(?<![A-Za-z0-9+/])(?<!data:image/(?:png|jpeg|gif|webp|svg\\+xml);base64,)(?<!\"image/(?:png|jpeg)\": \")"
+          "(?<![A-Za-z0-9+/])(?<!data:image/(?:png|jpeg|gif|webp);base64,)(?<!\"image/(?:png|jpeg)\": \")"
               + "[A-Za-z0-9+/]{200,}={0,2}", CODE, INSTRUCTION)
   );
 
