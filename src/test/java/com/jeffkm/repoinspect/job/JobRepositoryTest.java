@@ -1,6 +1,7 @@
 package com.jeffkm.repoinspect.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.jeffkm.repoinspect.github.RepoRef;
 import com.jeffkm.repoinspect.permission.Finding;
@@ -86,7 +87,8 @@ class JobRepositoryTest {
   @Test
   void 실행_시각이_아직이면_꺼내지_않는다() {
     long id = jobs.enqueue(repoId, SHA);
-    jobs.reschedule(id, NOW.plusSeconds(600), true);
+    jobs.claimNext(NOW);
+    jobs.reschedule(id, 1, NOW.plusSeconds(600), true);
 
     assertThat(jobs.claimNext(NOW)).isEmpty();
     assertThat(jobs.claimNext(NOW.plusSeconds(601))).isPresent();
@@ -121,7 +123,7 @@ class JobRepositoryTest {
     long id = jobs.enqueue(repoId, SHA);
     jobs.claimNext(NOW.plusSeconds(1));
 
-    jobs.reschedule(id, NOW.plusSeconds(900), false);
+    jobs.reschedule(id, 1, NOW.plusSeconds(900), false);
 
     assertThat(attempts(id)).isZero();
     assertThat(nextRunAt(id)).isEqualTo(NOW.plusSeconds(900));
@@ -137,8 +139,10 @@ class JobRepositoryTest {
         new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A"),
         new Finding("SHELL_EXEC", "node.child_process", "b.js", 3, "require('child_process')"));
 
-    jobs.recordPermissionResult(id, first, "{\"truncated\": false}", "SKILL", NOW);
-    jobs.recordPermissionResult(id, second, "{\"truncated\": true}", "SKILL", NOW);
+    assertThat(jobs.recordPermissionResult(id, 1, first, "{\"truncated\": false}", "SKILL", NOW)).isTrue();
+    // 재시도 상황을 흉내: 같은 claim 으로 다시 RUNNING 으로 돌려 덮어쓰기를 확인한다
+    jdbc.sql("update analysis_job set status = 'RUNNING' where id = :id").param("id", id).update();
+    jobs.recordPermissionResult(id, 1, second, "{\"truncated\": true}", "SKILL", NOW);
 
     JobView view = jobs.findJob(id).orElseThrow();
     assertThat(view.status()).isEqualTo("DONE");
@@ -165,12 +169,70 @@ class JobRepositoryTest {
   @Test
   void 실패로_끝내면_오류를_남긴다() {
     long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
 
-    jobs.fail(id, "저장소를 찾을 수 없습니다", NOW);
+    assertThat(jobs.fail(id, 1, "저장소를 찾을 수 없습니다", NOW)).isTrue();
 
     JobView view = jobs.findJob(id).orElseThrow();
     assertThat(view.status()).isEqualTo("FAILED");
     assertThat(view.error()).isEqualTo("저장소를 찾을 수 없습니다");
+  }
+
+  @Test
+  void 늦게_끝난_워커는_다른_워커의_작업을_덮어쓰지_못한다() {
+    long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
+    jobs.recoverStale(NOW.plusSeconds(1), 3, NOW.plusSeconds(2));
+    assertThat(jobs.claimNext(NOW).orElseThrow().attempts()).isEqualTo(2);
+
+    assertThat(jobs.fail(id, 1, "늦은 실패", NOW)).isFalse();
+    assertThat(jobs.recordPermissionResult(id, 1, List.of(), "{}", "SKILL", NOW)).isFalse();
+    assertThat(jobs.reschedule(id, 1, NOW.plusSeconds(60), true)).isFalse();
+
+    assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("RUNNING");
+    assertThat(attempts(id)).isEqualTo(2);
+    assertThat(jobs.recordPermissionResult(id, 2, List.of(), "{}", "SKILL", NOW)).isTrue();
+    assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("DONE");
+  }
+
+  @Test
+  void 결과_저장이_중간에_실패하면_이전_근거가_그대로_남는다() {
+    long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
+    var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A"));
+    jobs.recordPermissionResult(id, 1, first, "{}", "SKILL", NOW);
+    jdbc.sql("update analysis_job set status = 'RUNNING' where id = :id").param("id", id).update();
+
+    assertThatThrownBy(() -> jobs.recordPermissionResult(id, 1,
+        List.of(new Finding("SHELL_EXEC", "x", "b.js", 2, "y")), "{not json", "SKILL", NOW))
+        .isInstanceOf(Exception.class);
+
+    assertThat(jobs.findFindings(id)).containsExactlyElementsOf(first);
+    assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("RUNNING");
+  }
+
+  @Test
+  void 작업_8건을_8개_워커가_동시에_꺼내면_모두_서로_다른_작업() throws Exception {
+    for (int i = 0; i < 8; i++) {
+      jobs.enqueue(repoId, String.valueOf(i).repeat(40));
+    }
+    ExecutorService pool = Executors.newFixedThreadPool(8);
+    CountDownLatch start = new CountDownLatch(1);
+    List<Future<Optional<ClaimedJob>>> futures = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      futures.add(pool.submit(() -> {
+        start.await();
+        return jobs.claimNext(Instant.now().plusSeconds(60));
+      }));
+    }
+    start.countDown();
+    Set<Long> ids = new java.util.HashSet<>();
+    for (Future<Optional<ClaimedJob>> f : futures) {
+      ids.add(f.get().orElseThrow().id());
+    }
+    pool.shutdown();
+
+    assertThat(ids).hasSize(8);
   }
 
   int attempts(long id) {

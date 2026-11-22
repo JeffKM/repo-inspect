@@ -78,36 +78,53 @@ public class JobRepository {
         .optional();
   }
 
-  /** countAttempt=false: GitHub 한도처럼 우리 잘못이 아닌 대기는 시도 횟수에서 뺀다. */
-  public void reschedule(long jobId, Instant nextRunAt, boolean countAttempt) {
-    jdbc.sql("""
+  // 펜싱: claim 마다 attempts 가 오르고, 한도 대기 reschedule 은 claim 전 값만 되돌리므로 이전 claim 의 값은 다시 RUNNING 이 될 수 없다
+  /** countAttempt=false: GitHub 한도처럼 우리 잘못이 아닌 대기는 시도 횟수에서 뺀다. 내 claim 이 아니면 false. */
+  public boolean reschedule(long jobId, int claimedAttempts, Instant nextRunAt, boolean countAttempt) {
+    return jdbc.sql("""
             update analysis_job
             set status = 'QUEUED', locked_at = null, next_run_at = :next,
                 attempts = case when :countAttempt then attempts else greatest(attempts - 1, 0) end
-            where id = :id
+            where id = :id and status = 'RUNNING' and attempts = :claimed
             """)
         .param("id", jobId)
+        .param("claimed", claimedAttempts)
         .param("next", ts(nextRunAt))
         .param("countAttempt", countAttempt)
-        .update();
+        .update() == 1;
   }
 
-  public void fail(long jobId, String error, Instant now) {
-    jdbc.sql("""
+  public boolean fail(long jobId, int claimedAttempts, String error, Instant now) {
+    return jdbc.sql("""
             update analysis_job
             set status = 'FAILED', error = :error, finished_at = :now, locked_at = null
-            where id = :id
+            where id = :id and status = 'RUNNING' and attempts = :claimed
             """)
         .param("id", jobId)
+        .param("claimed", claimedAttempts)
         .param("error", error)
         .param("now", ts(now))
-        .update();
+        .update() == 1;
   }
 
-  /** 근거, 분석기 결과, 작업 상태를 한 트랜잭션으로. 다시 시도해도 근거가 두 번 쌓이지 않게 먼저 지운다. */
+  /** 근거, 분석기 결과, 작업 상태를 한 트랜잭션으로. 내 claim 이 아니면 아무것도 건드리지 않고 false. */
   @Transactional
-  public void recordPermissionResult(long jobId, List<Finding> findings, String payloadJson, String toolKind,
-      Instant now) {
+  public boolean recordPermissionResult(long jobId, int claimedAttempts, List<Finding> findings, String payloadJson,
+      String toolKind, Instant now) {
+    // 첫 문장이 행 잠금을 잡아 같은 작업에 대한 동시 기록을 직렬화한다
+    int applied = jdbc.sql("""
+            update analysis_job
+            set status = 'DONE', tool_kind = :kind, error = null, finished_at = :now, locked_at = null
+            where id = :id and status = 'RUNNING' and attempts = :claimed
+            """)
+        .param("id", jobId)
+        .param("claimed", claimedAttempts)
+        .param("kind", toolKind)
+        .param("now", ts(now))
+        .update();
+    if (applied != 1) {
+      return false;
+    }
     jdbc.sql("delete from finding where job_id = :id").param("id", jobId).update();
     template.batchUpdate(
         "insert into finding (job_id, category, rule_id, file_path, line, snippet) values (?, ?, ?, ?, ?, ?)",
@@ -129,15 +146,7 @@ public class JobRepository {
         .param("payload", payloadJson)
         .param("now", ts(now))
         .update();
-    jdbc.sql("""
-            update analysis_job
-            set status = 'DONE', tool_kind = :kind, error = null, finished_at = :now, locked_at = null
-            where id = :id
-            """)
-        .param("id", jobId)
-        .param("kind", toolKind)
-        .param("now", ts(now))
-        .update();
+    return true;
   }
 
   /** 워커가 작업 도중 죽으면 RUNNING 으로 남는다. 오래된 것을 다시 대기열로, 시도 상한이면 FAILED. */
