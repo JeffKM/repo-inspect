@@ -135,4 +135,69 @@ class GitHubClientTest {
       }
     }).isInstanceOf(LimitExceededException.class);
   }
+
+  @Test
+  void 다른_호스트로_리다이렉트되면_토큰을_빼고_따라간다() throws Exception {
+    String other = "http://127.0.0.1:" + server.port();
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(302)
+        .withHeader("Location", other + "/codeload/acme/tool/" + SHA)));
+    server.stubFor(get("/codeload/acme/tool/" + SHA).willReturn(aResponse().withStatus(200).withBody("tarbytes")));
+
+    try (InputStream in = client("secret", 1000).openTarball(REPO, SHA)) {
+      assertThat(new String(in.readAllBytes())).isEqualTo("tarbytes");
+    }
+
+    assertThat(server.findAll(getRequestedFor(urlEqualTo("/codeload/acme/tool/" + SHA))).get(0)
+        .containsHeader("Authorization")).isFalse();
+    assertThat(server.findAll(getRequestedFor(urlEqualTo("/repos/acme/tool/tarball/" + SHA))).get(0)
+        .containsHeader("Authorization")).isTrue();
+  }
+
+  @Test
+  void 리다이렉트는_한_번만_따라간다() {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(302)
+        .withHeader("Location", server.baseUrl() + "/a")));
+    server.stubFor(get("/a").willReturn(aResponse().withStatus(302).withHeader("Location", server.baseUrl() + "/b")));
+
+    assertThatThrownBy(() -> client("", 1000).openTarball(REPO, SHA)).isInstanceOf(GitHubException.class);
+  }
+
+  @Test
+  void 숫자가_아닌_Retry_After_는_기본_60초로_처리한다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(429)
+        .withHeader("retry-after", "Wed, 21 Oct 2015 07:28:00 GMT")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(60)));
+  }
+
+  @Test
+  void 과거의_재설정_시각은_지금으로_올린다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "0")
+        .withHeader("x-ratelimit-reset", String.valueOf(NOW.getEpochSecond() - 500))));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW));
+  }
+
+  @Test
+  void Retry_After_가_있는_403_은_보조_한도다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "10").withHeader("retry-after", "30")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(30)));
+  }
+
+  @Test
+  void JSON_이_깨지면_원인_예외를_보존한다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200).withBody("{not json")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(GitHubException.class, e -> assertThat(e.getCause()).isNotNull());
+  }
 }

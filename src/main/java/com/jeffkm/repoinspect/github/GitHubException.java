@@ -9,6 +9,11 @@ public class GitHubException extends RuntimeException {
     this.status = status;
   }
 
+  public GitHubException(int status, String message, Throwable cause) {
+    super(message, cause);
+    this.status = status;
+  }
+
   public int status() {
     return status;
   }

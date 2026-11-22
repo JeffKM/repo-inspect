@@ -37,7 +37,7 @@ public class GitHubClient implements GitHubSource {
     this.objectMapper = objectMapper;
     this.http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(3))
-        .followRedirects(HttpClient.Redirect.NORMAL) // 압축 파일은 codeload 로 302 리다이렉트된다
+        .followRedirects(HttpClient.Redirect.NEVER) // 토큰이 다른 호스트로 새지 않게 직접 따라간다
         .build();
   }
 
@@ -81,14 +81,20 @@ public class GitHubClient implements GitHubSource {
   }
 
   private <T> HttpResponse<T> send(HttpRequest req, BodyHandler<T> handler) {
-    HttpResponse<T> res;
-    try {
-      res = http.send(req, handler);
-    } catch (IOException e) {
-      throw new GitHubException(0, "GitHub 호출 실패: " + e.getMessage());
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new GitHubException(0, "GitHub 호출이 중단되었습니다");
+    HttpResponse<T> res = exchange(req, handler);
+    if (isRedirect(res.statusCode())) {
+      // 압축 파일은 codeload 로 302 리다이렉트된다. 한 번만 따라간다
+      Optional<String> location = res.headers().firstValue("location");
+      closeQuietly(res.body());
+      if (location.isEmpty()) {
+        throw new GitHubException(res.statusCode(), "리다이렉트 위치가 없습니다");
+      }
+      URI target = req.uri().resolve(location.get().strip());
+      res = exchange(redirected(req, target), handler);
+      if (isRedirect(res.statusCode())) {
+        closeQuietly(res.body());
+        throw new GitHubException(res.statusCode(), "리다이렉트가 두 번 이상입니다");
+      }
     }
     int status = res.statusCode();
     if (status >= 200 && status < 300) {
@@ -96,30 +102,73 @@ public class GitHubClient implements GitHubSource {
     }
     closeQuietly(res.body());
     if (status == 404) {
-      throw new RepoNotFoundException(req.uri().getPath());
+      throw new RepoNotFoundException(res.uri().getPath());
     }
     boolean exhausted = "0".equals(res.headers().firstValue("x-ratelimit-remaining").orElse(null));
-    if (status == 429 || (status == 403 && exhausted)) {
+    boolean retryAfter = res.headers().firstValue("retry-after").isPresent();
+    if (status == 429 || (status == 403 && (exhausted || retryAfter))) {
       throw new RateLimitedException(resetAt(res));
     }
     throw new GitHubException(status, "GitHub 응답 " + status);
   }
 
-  private Instant resetAt(HttpResponse<?> res) {
-    Optional<String> retryAfter = res.headers().firstValue("retry-after");
-    if (retryAfter.isPresent()) {
-      return clock.instant().plusSeconds(Long.parseLong(retryAfter.get().strip()));
+  private <T> HttpResponse<T> exchange(HttpRequest req, BodyHandler<T> handler) {
+    try {
+      return http.send(req, handler);
+    } catch (IOException e) {
+      throw new GitHubException(0, "GitHub 호출 실패: " + e.getClass().getSimpleName(), e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new GitHubException(0, "GitHub 호출이 중단되었습니다", e);
     }
-    return res.headers().firstValue("x-ratelimit-reset")
-        .map(v -> Instant.ofEpochSecond(Long.parseLong(v.strip())))
-        .orElse(clock.instant().plus(DEFAULT_RETRY));
+  }
+
+  private static boolean isRedirect(int status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+  }
+
+  /** 같은 호스트(포트 포함)일 때만 인증 헤더를 유지한다. */
+  private static HttpRequest redirected(HttpRequest req, URI target) {
+    boolean sameHost = target.getHost() != null && target.getHost().equalsIgnoreCase(req.uri().getHost())
+        && effectivePort(target) == effectivePort(req.uri());
+    HttpRequest.Builder b = HttpRequest.newBuilder(target).GET();
+    req.timeout().ifPresent(b::timeout);
+    req.headers().map().forEach((name, values) -> {
+      if (sameHost || !name.equalsIgnoreCase("Authorization")) {
+        values.forEach(v -> b.header(name, v));
+      }
+    });
+    return b.build();
+  }
+
+  private static int effectivePort(URI u) {
+    return u.getPort() != -1 ? u.getPort() : "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
+  }
+
+  private Instant resetAt(HttpResponse<?> res) {
+    Instant now = clock.instant();
+    Instant fallback = now.plus(DEFAULT_RETRY);
+    Instant at;
+    try {
+      Optional<String> retryAfter = res.headers().firstValue("retry-after");
+      if (retryAfter.isPresent()) {
+        at = now.plusSeconds(Long.parseLong(retryAfter.get().strip()));
+      } else {
+        at = res.headers().firstValue("x-ratelimit-reset")
+            .map(v -> Instant.ofEpochSecond(Long.parseLong(v.strip())))
+            .orElse(fallback);
+      }
+    } catch (NumberFormatException e) {
+      at = fallback; // HTTP-date 등 숫자가 아닌 값
+    }
+    return at.isBefore(now) ? now : at;
   }
 
   private com.fasterxml.jackson.databind.JsonNode readJson(String body) {
     try {
       return objectMapper.readTree(body);
     } catch (JsonProcessingException e) {
-      throw new GitHubException(0, "GitHub 응답을 읽지 못했습니다");
+      throw new GitHubException(0, "GitHub 응답을 읽지 못했습니다", e);
     }
   }
 
