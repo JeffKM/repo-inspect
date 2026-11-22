@@ -32,6 +32,10 @@ public record FileRole(Kind kind, boolean mainLocation) {
     String parent = segments.length > 1 ? segments[segments.length - 2] : "";
     boolean main = !TEST_FILE.matcher(base).matches();
     for (int i = 0; i < segments.length - 1 && main; i++) {
+      // src/main 아래는 패키지 이름(com/example/demo 등)이라 저장소 배치로 보지 않는다
+      if (segments[i].equals("src") && i + 1 < segments.length - 1 && segments[i + 1].equals("main")) {
+        break;
+      }
       main = !SIDE_DIRS.contains(segments[i].toLowerCase(Locale.ROOT));
     }
     return new FileRole(kindOf(base, parent, content), main);
