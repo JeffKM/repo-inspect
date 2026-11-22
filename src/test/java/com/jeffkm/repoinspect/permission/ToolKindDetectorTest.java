@@ -6,6 +6,8 @@ import com.jeffkm.repoinspect.archive.SourceFile;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ToolKindDetectorTest {
 
@@ -38,6 +40,39 @@ class ToolKindDetectorTest {
   void 이름만_비슷한_파이썬_패키지는_mcp_서버가_아니다() {
     assertThat(detect(new SourceFile("requirements.txt", "fastmcp-helper==0.1\nmcp-tools-x==1\n")))
         .containsExactly(ToolKind.GENERIC);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "mcp ; python_version>=\"3.10\"",
+      "mcp[cli]; extra==\"x\"",
+      "mcp # pin",
+      "mcp @ git+https://github.com/x/y",
+      "MCP>=1"})
+  void requirements_에서_환경_마커나_주석이_붙은_mcp_도_mcp_서버(String line) {
+    assertThat(detect(new SourceFile("requirements.txt", "httpx\n" + line + "\n"))).containsExactly(ToolKind.MCP_SERVER);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "[project]\ndependencies = [\n  \"httpx\",\n  \"mcp>=1.2\",\n]",
+      "[project.optional-dependencies]\nserver = [\"mcp[cli]\"]",
+      "[tool.poetry.dependencies]\npython = \"^3.10\"\nmcp = \"^1.0\""})
+  void pyproject_의_의존성_선언에_있는_mcp_는_mcp_서버(String toml) {
+    assertThat(detect(new SourceFile("pyproject.toml", toml))).containsExactly(ToolKind.MCP_SERVER);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "[project]\nname = \"mcp\"\ndescription = \"Tools for mcp\"\nkeywords = [\"mcp\", \"ai\"]\ndependencies = [\"httpx\"]",
+      "[project.scripts]\nmcp = \"pkg:main\""})
+  void pyproject_의_의존성_밖에_나온_mcp_는_mcp_서버가_아니다(String toml) {
+    assertThat(detect(new SourceFile("pyproject.toml", toml))).containsExactly(ToolKind.GENERIC);
+  }
+
+  @Test
+  void requirements_주석의_mcp_는_mcp_서버가_아니다() {
+    assertThat(detect(new SourceFile("requirements.txt", "# requires mcp\nhttpx\n"))).containsExactly(ToolKind.GENERIC);
   }
 
   @Test
