@@ -137,7 +137,7 @@ public class GitHubClient implements GitHubSource {
     throw new GitHubException(status, "GitHub 응답 " + status);
   }
 
-  // 자리는 응답 헤더를 받을 때까지만 잡는다. 압축 파일 본문은 호출한 쪽이 스트림으로 읽는다
+  // 자리는 http.send 가 돌아올 때까지 잡는다. 압축 파일(ofInputStream)은 헤더까지, 메타 호출(ofString)은 짧은 본문까지다
   private <T> HttpResponse<T> exchange(HttpRequest req, BodyHandler<T> handler) {
     try {
       if (!permits.tryAcquire(props.acquireTimeoutMs(), TimeUnit.MILLISECONDS)) {

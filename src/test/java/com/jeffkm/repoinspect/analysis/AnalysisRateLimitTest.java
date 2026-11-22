@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jeffkm.repoinspect.github.GitHubSource;
 import com.jeffkm.repoinspect.support.PostgresTestConfig;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,13 +40,18 @@ class AnalysisRateLimitTest {
   GitHubSource github;
 
   @BeforeEach
-  void clean() {
+  void clean() throws InterruptedException {
     jdbc.sql("truncate finding, analyzer_result, analysis_job, repository restart identity cascade").update();
     redis.execute((RedisCallback<Void>) c -> {
       c.serverCommands().flushAll();
       return null;
     });
     when(github.resolveHeadSha(any())).thenReturn("f".repeat(40));
+    // 1분 창 경계에서 요청이 두 창으로 갈리지 않게, 분이 끝나기 5초 전이면 다음 분까지 기다린다
+    long second = Instant.now().getEpochSecond() % 60;
+    if (second >= 55) {
+      Thread.sleep((60 - second) * 1000 + 100);
+    }
   }
 
   ResultActions analyze(String ip) throws Exception {

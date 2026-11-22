@@ -36,7 +36,7 @@ public class AnalysisRateLimiter {
     long epochSecond = clock.instant().getEpochSecond();
     String key = "rl:analyses:" + clientIp + ":" + (epochSecond / 60);
     try {
-      // 만료 시간은 키를 만들 때 같이 건다. INCR 뒤 EXPIRE 를 따로 하면 그 사이 장애로 만료 없는 키가 남아 계속 막힐 수 있다
+      // 만료 시간은 키를 만들 때 같이 건다. INCR 뒤 EXPIRE 를 따로 하면 그 사이 장애로 만료 없는 키가 Redis 에 쌓인다
       redis.opsForValue().setIfAbsent(key, "0", KEY_TTL);
       Long count = redis.opsForValue().increment(key);
       if (count != null && count > perMinute) {
