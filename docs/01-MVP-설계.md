@@ -231,3 +231,4 @@ GitHub API(REST 압축 파일, GraphQL 스타 표본) / Scorecard API / LLM API
 - FIFO·장치 항목은 읽지 않고, 서브모듈은 분석하지 않은 부분으로 알린다(`submodules`).
 - 빈 저장소는 요청 시점에 409로 답한다.
 - GitHub 리다이렉트는 http/https만, https에서 http로는 따라가지 않는다.
+- 주요/참고 구분은 경로 이름만 본다. 코드를 테스트·예제 폴더에 두면 참고로 내려가므로, 참고 근거도 결과에서 지우지 않고 모두 보여 준다.

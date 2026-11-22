@@ -132,4 +132,10 @@ class ToolKindDetectorTest {
   void 아무_신호도_없으면_generic() {
     assertThat(detect(new SourceFile("src/main.go", "package main"))).containsExactly(ToolKind.GENERIC);
   }
+
+  @Test
+  void BOM_이_붙은_package_json_도_읽는다() {
+    assertThat(detect(new SourceFile("package.json", "\uFEFF{\"dependencies\": {\"@modelcontextprotocol/sdk\": \"1\"}}")))
+        .containsExactly(ToolKind.MCP_SERVER);
+  }
 }

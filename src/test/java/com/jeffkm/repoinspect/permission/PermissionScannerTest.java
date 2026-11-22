@@ -276,6 +276,22 @@ class PermissionScannerTest {
         .containsExactly("skill.allowed_tools_bash");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "\uFEFF---\nallowed-tools: Bash\n---",
+      "---\nallowed-tools: >\n  Read Bash\n---",
+      "---\nallowed-tools: [Read,\n  Bash]\n---",
+      "---\nallowed-tools:\n  - Read\n# 주석\n  - Bash\n---"})
+  void skill_앞머리의_BOM_블록_스칼라_여러_줄_표기도_찾는다(String md) {
+    assertThat(ruleIds(scan(new SourceFile("skills/x/SKILL.md", md)))).containsExactly("skill.allowed_tools_bash");
+  }
+
+  @Test
+  void 주석_줄을_건너뛴_Bash_줄_번호() {
+    String md = "---\nallowed-tools:\n  - Read\n# 주석\n  - Bash\n---";
+    assertThat(scan(new SourceFile("skills/x/SKILL.md", md)).findings().get(0).line()).isEqualTo(5);
+  }
+
   @Test
   void 모르는_확장자의_코드도_코드_규칙을_받는다() {
     assertThat(ruleIds(scan(new SourceFile("lib/payload.dat", "require('child_process')"))))

@@ -81,7 +81,7 @@ public final class ToolKindDetector {
 
   private static JsonNode readJson(String content) {
     try {
-      JsonNode node = JSON.readTree(content);
+      JsonNode node = JSON.readTree(content.startsWith("\uFEFF") ? content.substring(1) : content);
       return node == null ? MissingNode.getInstance() : node;
     } catch (JsonProcessingException e) {
       return MissingNode.getInstance(); // 깨진 JSON 은 판별 신호가 없는 것으로 본다

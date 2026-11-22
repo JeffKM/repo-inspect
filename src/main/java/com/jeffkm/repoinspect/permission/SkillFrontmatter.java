@@ -17,7 +17,7 @@ final class SkillFrontmatter {
   }
 
   static OptionalInt bashToolLine(String[] lines) {
-    if (lines.length == 0 || !lines[0].strip().equals("---")) {
+    if (lines.length == 0 || !lines[0].replace("\uFEFF", "").strip().equals("---")) {
       return OptionalInt.empty();
     }
     for (int i = 1; i < lines.length; i++) {
@@ -28,18 +28,19 @@ final class SkillFrontmatter {
       if (!key.find()) {
         continue;
       }
-      if (!key.group(1).isBlank()) {
-        return BASH.matcher(key.group(1)).find() ? OptionalInt.of(i + 1) : OptionalInt.empty();
+      // 한 줄·목록·블록 스칼라·여러 줄 흐름 표기 모두 "키 뒤 값 + 이어지는 줄" 에서 처음 나오는 Bash 를 찾는다
+      if (BASH.matcher(key.group(1)).find()) {
+        return OptionalInt.of(i + 1);
       }
       for (int j = i + 1; j < lines.length; j++) {
         String item = lines[j];
         if (item.strip().equals("---")) {
           return OptionalInt.empty();
         }
-        if (item.isBlank()) {
+        if (item.isBlank() || item.startsWith("#")) {
           continue;
         }
-        // 들여쓰기도 - 도 아니면 다음 키다. 목록이 끝났다
+        // 들여쓰기도 - 도 아니면 다음 키다. 이어지는 줄이 끝났다
         if (!item.startsWith(" ") && !item.startsWith("\t") && !item.startsWith("-")) {
           return OptionalInt.empty();
         }
