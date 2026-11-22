@@ -7,4 +7,4 @@ services:
       POSTGRES_USER: repoinspect
       POSTGRES_PASSWORD: repoinspect
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"

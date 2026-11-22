@@ -28,12 +28,13 @@ pid=$!
 wd=$!
 wait "$pid"
 code=$?
-pkill -P "$wd" 2>/dev/null || true   # 워치독 안의 sleep 까지 정리
-kill "$wd" 2>/dev/null || true
+sl="$(pgrep -P "$wd")"              # 워치독 안의 sleep PID 를 먼저 잡는다
+kill "$wd" 2>/dev/null || true      # 워치독 셸을 먼저 끝내 echo/kill -9 가 실행되지 않게
+[ -n "$sl" ] && kill $sl 2>/dev/null || true
 wait "$wd" 2>/dev/null || true
 
 if [ "$code" -eq 0 ]; then
-  echo "테스트 통과. 커버리지 리포트: build/reports/jacoco/test/html/index.html"
+  echo "테스트 통과."
 else
   echo "테스트 실패(exit $code). 리포트: build/reports/tests/test/index.html" >&2
 fi
