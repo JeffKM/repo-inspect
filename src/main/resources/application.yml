@@ -22,4 +22,5 @@ repo-inspect:
   worker:
     enabled: true
     poll-ms: 1000
-    read-deadline-seconds: 120       # 압축 파일 본문을 읽는 시간 상한
+    read-idle-seconds: 30            # 압축 파일 본문 바이트가 이 시간 동안 안 오면 끊는다
+    read-deadline-seconds: 300       # 본문 전체를 읽는 시간 상한(끝없이 찔끔 오는 응답 방어)

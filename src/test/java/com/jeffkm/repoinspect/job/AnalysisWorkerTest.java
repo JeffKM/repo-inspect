@@ -28,7 +28,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest(properties = {"repo-inspect.worker.enabled=false", "repo-inspect.worker.read-deadline-seconds=1"})
+@SpringBootTest(properties = {"repo-inspect.worker.enabled=false", "repo-inspect.worker.read-idle-seconds=1",
+    "repo-inspect.worker.read-deadline-seconds=3"})
 @Import(PostgresTestConfig.class)
 class AnalysisWorkerTest {
 
@@ -166,6 +167,33 @@ class AnalysisWorkerTest {
 
     assertThat(jobs.findJob(jobId).orElseThrow().status()).isEqualTo("QUEUED");
     assertThat(column("attempts", Integer.class)).isEqualTo(1);
+  }
+
+  @Test
+  void 재시도_시각은_실패한_때를_기준으로_잡는다() {
+    CountDownLatch closed = new CountDownLatch(1);
+    when(github.openTarball(any(), anyString())).thenReturn(new InputStream() {
+      @Override
+      public int read() throws IOException {
+        try {
+          closed.await();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        throw new IOException("closed");
+      }
+
+      @Override
+      public void close() {
+        closed.countDown();
+      }
+    });
+    Instant before = Instant.now();
+
+    worker.runOnce();
+
+    // 무응답 기한 1초 뒤 실패, 거기서 30초 뒤. 처리 시작 시각 기준이면 before+30초 근처가 된다
+    assertThat(column("next_run_at", OffsetDateTime.class).toInstant()).isAfter(before.plusSeconds(30).plusMillis(900));
   }
 
   <T> T column(String name, Class<T> type) {

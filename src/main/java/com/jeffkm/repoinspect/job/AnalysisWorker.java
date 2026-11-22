@@ -15,6 +15,7 @@ import com.jeffkm.repoinspect.permission.ToolKind;
 import com.jeffkm.repoinspect.permission.ToolKindDetector;
 import java.io.InputStream;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,8 +24,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -45,6 +44,7 @@ public class AnalysisWorker {
   private final ArchiveLimits limits;
   private final Clock clock;
   private final ObjectMapper objectMapper;
+  private final long readIdleSeconds;
   private final long readDeadlineSeconds;
   private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread thread = new Thread(r, "read-deadline");
@@ -53,12 +53,15 @@ public class AnalysisWorker {
   });
 
   public AnalysisWorker(JobRepository jobs, GitHubSource github, ArchiveLimits limits, Clock clock,
-      ObjectMapper objectMapper, @Value("${repo-inspect.worker.read-deadline-seconds:120}") long readDeadlineSeconds) {
+      ObjectMapper objectMapper,
+      @Value("${repo-inspect.worker.read-idle-seconds:30}") long readIdleSeconds,
+      @Value("${repo-inspect.worker.read-deadline-seconds:300}") long readDeadlineSeconds) {
     this.jobs = jobs;
     this.github = github;
     this.limits = limits;
     this.clock = clock;
     this.objectMapper = objectMapper;
+    this.readIdleSeconds = readIdleSeconds;
     this.readDeadlineSeconds = readDeadlineSeconds;
   }
 
@@ -75,12 +78,9 @@ public class AnalysisWorker {
   }
 
   private void process(ClaimedJob job) {
-    Instant now = clock.instant();
     int claimed = job.attempts();
-    ScheduledFuture<?> deadline = null;
-    try (InputStream in = github.openTarball(job.repo(), job.sha())) {
-      // HttpClient 에는 본문 읽기 시간 상한이 없다. 기한이 지나면 다른 스레드에서 스트림을 닫아 막힌 read 를 IOException 으로 깨운다
-      deadline = deadlines.schedule(() -> closeQuietly(in), readDeadlineSeconds, TimeUnit.SECONDS);
+    try (InputStream in = new WatchedInputStream(github.openTarball(job.repo(), job.sha()),
+        Duration.ofSeconds(readIdleSeconds), Duration.ofSeconds(readDeadlineSeconds), deadlines)) {
       ReadResult read = SafeTarReader.read(in, limits);
       Set<ToolKind> kinds = ToolKindDetector.detect(read.files());
       ScanResult scan = PermissionScanner.scan(read.files());
@@ -101,27 +101,17 @@ public class AnalysisWorker {
     } catch (RateLimitedException e) {
       settle(job, jobs.reschedule(job.id(), claimed, e.resetAt(), false));
     } catch (RepoNotFoundException e) {
-      settle(job, jobs.fail(job.id(), claimed, "저장소를 찾을 수 없습니다", now));
+      settle(job, jobs.fail(job.id(), claimed, "저장소를 찾을 수 없습니다", clock.instant()));
     } catch (Exception e) {
       log.warn("분석 실패 job={} attempt={}", job.id(), claimed, e);
+      // 실패한 때를 기준으로 잡는다. 시작 시각을 쓰면 기한 뒤 실패한 작업이 곧바로 다시 돈다
+      Instant failedAt = clock.instant();
       int round = job.roundAttempts();
       if (round >= MAX_ATTEMPTS) {
-        settle(job, jobs.fail(job.id(), claimed, "분석에 " + MAX_ATTEMPTS + "번 실패했습니다", now));
+        settle(job, jobs.fail(job.id(), claimed, "분석에 " + MAX_ATTEMPTS + "번 실패했습니다", failedAt));
       } else {
-        settle(job, jobs.reschedule(job.id(), claimed, now.plusSeconds(RETRY_BASE_SECONDS * round), true));
+        settle(job, jobs.reschedule(job.id(), claimed, failedAt.plusSeconds(RETRY_BASE_SECONDS * round), true));
       }
-    } finally {
-      if (deadline != null) {
-        deadline.cancel(false);
-      }
-    }
-  }
-
-  private static void closeQuietly(InputStream in) {
-    try {
-      in.close();
-    } catch (Exception ignored) {
-      // 닫기 실패는 읽기 쪽 오류로 드러난다
     }
   }
 
