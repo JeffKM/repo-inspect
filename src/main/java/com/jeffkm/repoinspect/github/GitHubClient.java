@@ -17,6 +17,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
@@ -28,16 +30,19 @@ public class GitHubClient implements GitHubSource {
   private static final long MAX_WAIT_SECONDS = 3600;
   private static final Pattern SHA_FORMAT = Pattern.compile("[0-9a-f]{40}");
   private static final Duration DEFAULT_RETRY = Duration.ofSeconds(60);
+  private static final Duration BUSY_RETRY = Duration.ofSeconds(5);
 
   private final GitHubProperties props;
   private final Clock clock;
   private final ObjectMapper objectMapper;
   private final HttpClient http;
+  private final Semaphore permits;
 
   public GitHubClient(GitHubProperties props, Clock clock, ObjectMapper objectMapper) {
     this.props = props;
     this.clock = clock;
     this.objectMapper = objectMapper;
+    this.permits = new Semaphore(props.maxConcurrent());
     this.http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(3))
         .followRedirects(HttpClient.Redirect.NEVER) // 토큰이 다른 호스트로 새지 않게 직접 따라간다
@@ -130,7 +135,17 @@ public class GitHubClient implements GitHubSource {
     throw new GitHubException(status, "GitHub 응답 " + status);
   }
 
+  // 자리는 응답 헤더를 받을 때까지만 잡는다. 압축 파일 본문은 호출한 쪽이 스트림으로 읽는다
   private <T> HttpResponse<T> exchange(HttpRequest req, BodyHandler<T> handler) {
+    try {
+      if (!permits.tryAcquire(props.acquireTimeoutMs(), TimeUnit.MILLISECONDS)) {
+        // 한도 초과와 같은 길로 보낸다. 워커는 시도 횟수를 세지 않고 미루고, API 는 503 + Retry-After 로 답한다
+        throw new RateLimitedException(clock.instant().plus(BUSY_RETRY));
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new GitHubException(0, "GitHub 호출이 중단되었습니다", e);
+    }
     try {
       return http.send(req, handler);
     } catch (IOException e) {
@@ -138,6 +153,8 @@ public class GitHubClient implements GitHubSource {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new GitHubException(0, "GitHub 호출이 중단되었습니다", e);
+    } finally {
+      permits.release();
     }
   }
 

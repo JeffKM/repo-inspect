@@ -21,6 +21,10 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,8 +49,45 @@ class GitHubClientTest {
   }
 
   GitHubClient client(String token, long maxTarballBytes) {
-    return new GitHubClient(new GitHubProperties(server.baseUrl(), token, maxTarballBytes),
+    return new GitHubClient(new GitHubProperties(server.baseUrl(), token, maxTarballBytes, 8, 2000),
         Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
+  }
+
+  GitHubClient limitedClient(int maxConcurrent, long acquireTimeoutMs) {
+    return new GitHubClient(new GitHubProperties(server.baseUrl(), "", 1000, maxConcurrent, acquireTimeoutMs),
+        Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
+  }
+
+  @Test
+  void 동시_호출이_상한이면_잠깐_기다리고_안_되면_한도_초과로_미룬다() throws Exception {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200).withFixedDelay(1500)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main").willReturn(aResponse().withStatus(200).withBody(SHA)));
+    GitHubClient c = limitedClient(1, 100);
+    ExecutorService pool = Executors.newSingleThreadExecutor();
+    try {
+      Future<String> first = pool.submit(() -> c.resolveHeadSha(REPO));
+      Thread.sleep(300); // 첫 호출이 자리를 잡고 응답을 기다리는 동안
+
+      assertThatThrownBy(() -> c.resolveHeadSha(REPO))
+          .isInstanceOfSatisfying(RateLimitedException.class,
+              e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(5)));
+      assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(SHA);
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  void 실패한_호출도_자리를_돌려준다() {
+    server.stubFor(get("/repos/acme/none").willReturn(aResponse().withStatus(404)));
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main").willReturn(aResponse().withStatus(200).withBody(SHA)));
+    GitHubClient c = limitedClient(1, 100);
+
+    assertThatThrownBy(() -> c.resolveHeadSha(new RepoRef("acme", "none"))).isInstanceOf(RepoNotFoundException.class);
+    assertThat(c.resolveHeadSha(REPO)).isEqualTo(SHA);
   }
 
   @Test

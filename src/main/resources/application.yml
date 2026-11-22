@@ -15,6 +15,8 @@ repo-inspect:
     base-url: https://api.github.com
     token: ${GITHUB_TOKEN:}
     max-tarball-bytes: 52428800      # 받는 압축 파일 상한 50MB
+    max-concurrent: 8                # 동시에 나가는 GitHub 호출 상한(보조 한도와 스레드 묶임 방지)
+    acquire-timeout-ms: 2000         # 자리가 날 때까지 기다리는 시간. 넘으면 5초 뒤 다시 시도로 안내
   archive:
     max-total-bytes: 209715200       # 풀린 전체 크기 상한 200MB(압축 폭탄 방어)
     max-files: 5000
