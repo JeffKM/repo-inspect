@@ -2,6 +2,7 @@ package com.jeffkm.repoinspect.permission;
 
 import com.jeffkm.repoinspect.archive.SourceFile;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -27,18 +28,23 @@ public final class PermissionScanner {
     Set<String> domains = new TreeSet<>();
     boolean truncated = false;
     boolean domainsTruncated = false;
-    for (SourceFile f : files) {
+    // 테스트·예제 근거가 상한을 먼저 채워 본 코드 근거가 밀려나지 않게 본 위치 파일부터 훑는다(정렬은 안정적)
+    List<SourceFile> ordered = files.stream()
+        .sorted(Comparator.comparing((SourceFile f) -> !FileRole.of(f.path(), f.content()).mainLocation()))
+        .toList();
+    for (SourceFile f : ordered) {
       String base = f.path().substring(f.path().lastIndexOf('/') + 1);
       if (LOCK_FILES.contains(base)) {
         continue;
       }
-      // README 같은 문서의 링크는 소음이다. SKILL.md 는 에이전트가 따르는 지시라 링크도 본다
-      boolean collectDomains = !base.endsWith(".md") || base.equals("SKILL.md");
+      FileRole role = FileRole.of(f.path(), f.content());
+      // 문서의 링크와 테스트·예제의 주소는 소음이다. 에이전트 지시문(SKILL.md 등)과 설정의 주소는 본다
+      boolean collectDomains = role.mainLocation() && role.kind() != FileRole.Kind.DOC;
       String[] lines = f.content().split("\n", -1);
       for (int i = 0; i < lines.length; i++) {
         String line = lines[i];
         for (Rule rule : PermissionRules.ALL) {
-          if (!rule.appliesTo(f.path())) {
+          if (!rule.appliesTo(f.path(), role.kind())) {
             continue;
           }
           Matcher rm = rule.pattern().matcher(line);
@@ -49,7 +55,8 @@ public final class PermissionScanner {
             truncated = true;
             continue;
           }
-          found.add(new Finding(rule.category().name(), rule.id(), f.path(), i + 1, snippet(line, rm.start())));
+          found.add(new Finding(rule.category().name(), rule.id(), f.path(), i + 1, snippet(line, rm.start()),
+              role.isPrimary(rule.category())));
         }
         if (collectDomains) {
           Matcher m = URL.matcher(line);

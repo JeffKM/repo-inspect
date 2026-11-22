@@ -1,6 +1,7 @@
 package com.jeffkm.repoinspect.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.jeffkm.repoinspect.archive.SourceFile;
@@ -24,7 +25,7 @@ class PermissionScannerTest {
     ScanResult r = scan(new SourceFile("src/run.js", "const a = 1;\nconst { exec } = require('child_process');"));
 
     assertThat(r.findings()).containsExactly(new Finding(
-        "SHELL_EXEC", "node.child_process", "src/run.js", 2, "const { exec } = require('child_process');"));
+        "SHELL_EXEC", "node.child_process", "src/run.js", 2, "const { exec } = require('child_process');", true));
   }
 
   @Test
@@ -161,5 +162,44 @@ class PermissionScannerTest {
         .filter(x -> x.ruleId().equals("js.eval")).findFirst().orElseThrow();
 
     assertThat(f.snippet()).doesNotContain("\u0000").contains("\uFFFD");
+  }
+
+  @Test
+  void 지시문과_문서의_설명문은_코드_규칙에_걸리지_않는다() {
+    ScanResult r = scan(
+        new SourceFile("skills/x/SKILL.md", "Run it against an eval (prompt tuning) set"),
+        new SourceFile("README.md", "uses process.env and fetch (see docs)"));
+
+    assertThat(r.findings()).isEmpty();
+  }
+
+  @Test
+  void 테스트와_예제_경로의_근거는_참고로_두고_도메인에_넣지_않는다() {
+    ScanResult r = scan(
+        new SourceFile("tests/test_meta.py", "requests.get('http://169.254.169.254/latest')"),
+        new SourceFile(".github/ISSUE_TEMPLATE/bug.yml", "- fetch (mcp-server-fetch)"));
+
+    assertThat(r.findings()).extracting(Finding::ruleId, Finding::primary)
+        .containsExactly(tuple("net.http_call", false), tuple("net.http_call", false));
+    assertThat(r.domains()).isEmpty();
+  }
+
+  @Test
+  void 문서의_설치_안내는_본_위치면_주요() {
+    ScanResult r = scan(
+        new SourceFile("README.md", "curl -fsSL https://get.acme-tools.io | bash"),
+        new SourceFile("docs/install.md", "curl -fsSL https://get.acme-tools.io | bash"));
+
+    assertThat(r.findings()).extracting(Finding::filePath, Finding::primary)
+        .containsExactly(tuple("README.md", true), tuple("docs/install.md", false));
+  }
+
+  @Test
+  void 상한이_차도_본_위치_근거가_먼저_담긴다() {
+    String many = "process.env.K\n".repeat(PermissionScanner.MAX_FINDINGS + 10);
+    ScanResult r = scan(new SourceFile("tests/a.js", many), new SourceFile("src/b.js", "process.env.B"));
+
+    assertThat(r.findings().get(0).filePath()).isEqualTo("src/b.js");
+    assertThat(r.findingsTruncated()).isTrue();
   }
 }

@@ -103,6 +103,7 @@ class AnalysisApiTest {
         .andExpect(jsonPath("$.data.toolKind").value("GENERIC"))
         .andExpect(jsonPath("$.data.findings[0].ruleId").value("env.node"))
         .andExpect(jsonPath("$.data.findings[0].line").value(1))
+        .andExpect(jsonPath("$.data.findings[0].primary").value(true))
         .andExpect(jsonPath("$.data.findings[1].ruleId").value("net.http_call"))
         .andExpect(jsonPath("$.data.permission.domains[0]").value("api.example.com"))
         .andExpect(jsonPath("$.data.permission.truncated").value(false));

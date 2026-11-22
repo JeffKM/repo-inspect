@@ -11,6 +11,7 @@ import com.jeffkm.repoinspect.github.GitHubSource;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
 import com.jeffkm.repoinspect.github.RepoRef;
+import com.jeffkm.repoinspect.permission.Finding;
 import com.jeffkm.repoinspect.support.PostgresTestConfig;
 import com.jeffkm.repoinspect.support.TarGz;
 import java.io.IOException;
@@ -169,5 +170,23 @@ class AnalysisWorkerTest {
 
   <T> T column(String name, Class<T> type) {
     return jdbc.sql("select " + name + " from analysis_job where id = :id").param("id", jobId).query(type).single();
+  }
+
+  @Test
+  void 근거를_주요와_참고로_나눠_세고_테스트_경로의_도메인은_뺀다() {
+    when(github.openTarball(any(), anyString())).thenReturn(new TarGz()
+        .file("acme-tool-d/src/index.js", "fetch('https://api.acme-tools.io/v1')\nconst k = process.env.KEY;")
+        .file("acme-tool-d/tests/fixture.js", "fetch('http://169.254.169.254/latest')")
+        .stream());
+
+    worker.runOnce();
+
+    JobView view = jobs.findJob(jobId).orElseThrow();
+    assertThat(view.permissionJson())
+        .contains("\"primaryCounts\": {\"NETWORK\": 1, \"SECRETS\": 1}")
+        .contains("\"secondaryFindings\": 1")
+        .contains("api.acme-tools.io")
+        .doesNotContain("169.254.169.254");
+    assertThat(jobs.findFindings(jobId)).extracting(Finding::primary).containsExactly(true, true, false);
   }
 }

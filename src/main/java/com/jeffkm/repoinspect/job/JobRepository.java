@@ -140,7 +140,8 @@ public class JobRepository {
     }
     jdbc.sql("delete from finding where job_id = :id").param("id", jobId).update();
     template.batchUpdate(
-        "insert into finding (job_id, category, rule_id, file_path, line, snippet) values (?, ?, ?, ?, ?, ?)",
+        "insert into finding (job_id, category, rule_id, file_path, line, snippet, is_primary)"
+            + " values (?, ?, ?, ?, ?, ?, ?)",
         findings, 200, (ps, f) -> {
           ps.setLong(1, jobId);
           ps.setString(2, f.category());
@@ -148,6 +149,7 @@ public class JobRepository {
           ps.setString(4, f.filePath());
           ps.setInt(5, f.line());
           ps.setString(6, f.snippet());
+          ps.setBoolean(7, f.primary());
         });
     jdbc.sql("""
             insert into analyzer_result (job_id, analyzer, status, payload, finished_at)
@@ -195,13 +197,13 @@ public class JobRepository {
 
   public List<Finding> findFindings(long jobId) {
     return jdbc.sql("""
-            select category, rule_id, file_path, line, snippet
+            select category, rule_id, file_path, line, snippet, is_primary
             from finding where job_id = :id
-            order by id
+            order by is_primary desc, id
             """)
         .param("id", jobId)
         .query((rs, n) -> new Finding(rs.getString("category"), rs.getString("rule_id"), rs.getString("file_path"),
-            rs.getInt("line"), rs.getString("snippet")))
+            rs.getInt("line"), rs.getString("snippet"), rs.getBoolean("is_primary")))
         .list();
   }
 

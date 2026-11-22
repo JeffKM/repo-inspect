@@ -7,6 +7,7 @@ import com.jeffkm.repoinspect.archive.SafeTarReader;
 import com.jeffkm.repoinspect.github.GitHubSource;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
+import com.jeffkm.repoinspect.permission.Finding;
 import com.jeffkm.repoinspect.permission.PermissionScanner;
 import com.jeffkm.repoinspect.permission.ScanResult;
 import com.jeffkm.repoinspect.permission.ToolKind;
@@ -18,10 +19,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +90,10 @@ public class AnalysisWorker {
       payload.put("domains", scan.domains());
       payload.put("domainsTruncated", scan.domainsTruncated());
       payload.put("findingsTruncated", scan.findingsTruncated());
+      // 화면 첫 줄에 보여 줄 범주별 수는 주요 근거만 센다
+      payload.put("primaryCounts", scan.findings().stream().filter(Finding::primary)
+          .collect(Collectors.groupingBy(Finding::category, TreeMap::new, Collectors.counting())));
+      payload.put("secondaryFindings", scan.findings().stream().filter(f -> !f.primary()).count());
       settle(job, jobs.recordPermissionResult(job.id(), claimed, scan.findings(),
           objectMapper.writeValueAsString(payload), ToolKindDetector.label(kinds), clock.instant()));
     } catch (RateLimitedException e) {

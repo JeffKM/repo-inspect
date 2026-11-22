@@ -134,10 +134,10 @@ class JobRepositoryTest {
   void 결과_저장은_근거를_덮어쓰고_작업을_DONE_으로() {
     long id = jobs.enqueue(repoId, SHA);
     jobs.claimNext(NOW.plusSeconds(1));
-    var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A"));
+    var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A", true));
     var second = List.of(
-        new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A"),
-        new Finding("SHELL_EXEC", "node.child_process", "b.js", 3, "require('child_process')"));
+        new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A", true),
+        new Finding("SHELL_EXEC", "node.child_process", "b.js", 3, "require('child_process')", true));
 
     assertThat(jobs.recordPermissionResult(id, 1, first, "{\"truncated\": false}", "SKILL", NOW)).isTrue();
     // 재시도 상황을 흉내: 같은 claim 으로 다시 RUNNING 으로 돌려 덮어쓰기를 확인한다
@@ -199,12 +199,12 @@ class JobRepositoryTest {
   void 결과_저장이_중간에_실패하면_이전_근거가_그대로_남는다() {
     long id = jobs.enqueue(repoId, SHA);
     jobs.claimNext(NOW);
-    var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A"));
+    var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A", true));
     jobs.recordPermissionResult(id, 1, first, "{}", "SKILL", NOW);
     jdbc.sql("update analysis_job set status = 'RUNNING' where id = :id").param("id", id).update();
 
     assertThatThrownBy(() -> jobs.recordPermissionResult(id, 1,
-        List.of(new Finding("SHELL_EXEC", "x", "b.js", 2, "y")), "{not json", "SKILL", NOW))
+        List.of(new Finding("SHELL_EXEC", "x", "b.js", 2, "y", true)), "{not json", "SKILL", NOW))
         .isInstanceOf(Exception.class);
 
     assertThat(jobs.findFindings(id)).containsExactlyElementsOf(first);
@@ -274,5 +274,16 @@ class JobRepositoryTest {
   Instant nextRunAt(long id) {
     return jdbc.sql("select next_run_at from analysis_job where id = :id").param("id", id)
         .query(OffsetDateTime.class).single().toInstant();
+  }
+
+  @Test
+  void 근거는_주요를_먼저_돌려준다() {
+    long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
+    jobs.recordPermissionResult(id, 1, List.of(
+        new Finding("NETWORK", "net.http_call", "tests/a.js", 1, "fetch(x)", false),
+        new Finding("SECRETS", "env.node", "src/b.js", 1, "process.env.B", true)), "{}", "GENERIC", NOW);
+
+    assertThat(jobs.findFindings(id)).extracting(Finding::filePath).containsExactly("src/b.js", "tests/a.js");
   }
 }
