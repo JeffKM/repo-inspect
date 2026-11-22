@@ -1,21 +1,29 @@
 package com.jeffkm.repoinspect.common;
 
 import com.jeffkm.repoinspect.github.GitHubException;
+import com.jeffkm.repoinspect.github.InvalidRepoUrlException;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
 import java.time.Clock;
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   private final Clock clock;
 
@@ -23,8 +31,8 @@ public class GlobalExceptionHandler {
     this.clock = clock;
   }
 
-  @ExceptionHandler(IllegalArgumentException.class)
-  ResponseEntity<ApiResponse<Void>> badRequest(IllegalArgumentException e) {
+  @ExceptionHandler(InvalidRepoUrlException.class)
+  ResponseEntity<ApiResponse<Void>> badRequest(InvalidRepoUrlException e) {
     return ResponseEntity.badRequest().body(ApiResponse.fail(e.getMessage()));
   }
 
@@ -52,8 +60,31 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.fail("GitHub 응답에 문제가 있습니다"));
   }
 
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  ResponseEntity<ApiResponse<Void>> typeMismatch(MethodArgumentTypeMismatchException e) {
+    return ResponseEntity.badRequest().body(ApiResponse.fail("요청 형식이 올바르지 않습니다"));
+  }
+
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  ResponseEntity<ApiResponse<Void>> methodNotAllowed(HttpRequestMethodNotSupportedException e) {
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.fail("지원하지 않는 요청 방식입니다"));
+  }
+
+  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+  ResponseEntity<ApiResponse<Void>> unsupportedMediaType(HttpMediaTypeNotSupportedException e) {
+    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiResponse.fail("JSON 형식으로 보내 주세요"));
+  }
+
   @ExceptionHandler(ResponseStatusException.class)
   ResponseEntity<ApiResponse<Void>> status(ResponseStatusException e) {
-    return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.fail(e.getReason()));
+    String reason = e.getReason() != null ? e.getReason() : HttpStatus.valueOf(e.getStatusCode().value()).getReasonPhrase();
+    return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.fail(reason));
+  }
+
+  /** 예상 못 한 오류. 내부 메시지는 로그에만 남기고 응답은 고정 문구. */
+  @ExceptionHandler(Exception.class)
+  ResponseEntity<ApiResponse<Void>> unexpected(Exception e) {
+    log.error("처리하지 못한 오류", e);
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResponse.fail("서버 오류가 발생했습니다"));
   }
 }

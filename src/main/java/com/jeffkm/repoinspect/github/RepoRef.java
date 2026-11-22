@@ -11,22 +11,22 @@ public record RepoRef(String owner, String name) {
   /** 생성자로도 만들 수 있으므로 여기서 검증해 신뢰 경계를 막는다. */
   public RepoRef {
     if (owner == null || name == null || !valid(owner) || !valid(name)) {
-      throw new IllegalArgumentException("저장소 이름 형식이 올바르지 않습니다");
+      throw new InvalidRepoUrlException("저장소 이름 형식이 올바르지 않습니다");
     }
   }
 
   public static RepoRef parse(String input) {
     if (input == null || input.isBlank()) {
-      throw new IllegalArgumentException("저장소 주소가 비었습니다");
+      throw new InvalidRepoUrlException("저장소 주소가 비었습니다");
     }
     String s = input.strip().split("[?#]", 2)[0];
     s = s.replaceFirst("^https?://", "").replaceFirst("^www\\.", "");
     if (!s.startsWith(HOST)) {
-      throw new IllegalArgumentException("github.com 저장소 주소만 받습니다");
+      throw new InvalidRepoUrlException("github.com 저장소 주소만 받습니다");
     }
     String[] parts = s.substring(HOST.length()).split("/");
     if (parts.length < 2) {
-      throw new IllegalArgumentException("주소에 소유자와 저장소 이름이 모두 있어야 합니다");
+      throw new InvalidRepoUrlException("주소에 소유자와 저장소 이름이 모두 있어야 합니다");
     }
     String owner = parts[0];
     String name = parts[1].replaceFirst("\\.git$", "");

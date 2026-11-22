@@ -1,14 +1,18 @@
 package com.jeffkm.repoinspect.analysis;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
+import com.jeffkm.repoinspect.github.GitHubException;
 import com.jeffkm.repoinspect.github.GitHubSource;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
@@ -72,11 +76,13 @@ class AnalysisApiTest {
     String url = body("https://github.com/acme/tool");
 
     String first = mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON).content(url))
+        .andExpect(status().isAccepted())
         .andReturn().getResponse().getContentAsString();
     String second = mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON).content(url))
+        .andExpect(status().isAccepted())
         .andReturn().getResponse().getContentAsString();
 
-    org.assertj.core.api.Assertions.assertThat(jobId(first)).isEqualTo(jobId(second));
+    assertThat(jobId(first)).isEqualTo(jobId(second));
   }
 
   @Test
@@ -143,7 +149,50 @@ class AnalysisApiTest {
         .andExpect(jsonPath("$.error").value("분석을 찾을 수 없습니다"));
   }
 
+  @Test
+  void 숫자가_아닌_번호는_400() throws Exception {
+    mvc.perform(get("/api/analyses/abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void 지원하지_않는_메서드는_405() throws Exception {
+    mvc.perform(delete("/api/analyses"))
+        .andExpect(status().isMethodNotAllowed())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void JSON이_아닌_본문은_415() throws Exception {
+    mvc.perform(post("/api/analyses").contentType(MediaType.TEXT_PLAIN).content("x"))
+        .andExpect(status().isUnsupportedMediaType())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void GitHub_오류는_502() throws Exception {
+    when(github.resolveHeadSha(any())).thenThrow(new GitHubException(500, "x"));
+
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/tool")))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void 예상_못_한_오류는_500_이고_내부_메시지를_숨긴다() throws Exception {
+    when(github.resolveHeadSha(any())).thenThrow(new IllegalArgumentException("내부 비밀"));
+
+    String res = mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/tool")))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.success").value(false))
+        .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+    assertThat(res).doesNotContain("내부 비밀");
+  }
+
   static long jobId(String json) {
-    return Long.parseLong(json.replaceAll(".*\"jobId\":(\\d+).*", "$1"));
+    return ((Number) JsonPath.read(json, "$.data.jobId")).longValue();
   }
 }
