@@ -76,6 +76,44 @@ class ToolKindDetectorTest {
   }
 
   @Test
+  void package_json_의_설명에만_나온_SDK_는_mcp_서버가_아니다() {
+    assertThat(detect(new SourceFile("package.json", "{\"description\": \"wrapper for @modelcontextprotocol/sdk\"}")))
+        .containsExactly(ToolKind.GENERIC);
+    assertThat(detect(new SourceFile("package.json", "{ broken"))).containsExactly(ToolKind.GENERIC);
+  }
+
+  @Test
+  void 개발_의존성의_SDK_와_npm_fastmcp_도_mcp_서버() {
+    assertThat(detect(new SourceFile("package.json", "{\"devDependencies\": {\"@modelcontextprotocol/sdk\": \"1\"}}")))
+        .containsExactly(ToolKind.MCP_SERVER);
+    assertThat(detect(new SourceFile("package.json", "{\"dependencies\": {\"fastmcp\": \"^3\"}}")))
+        .containsExactly(ToolKind.MCP_SERVER);
+  }
+
+  @Test
+  void settings_json_의_최상위가_아닌_hooks_는_hook_이_아니다() {
+    assertThat(detect(new SourceFile(".claude/settings.json", "{\"env\": {\"hooks\": \"1\"}}")))
+        .containsExactly(ToolKind.GENERIC);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "[dependency-groups]\ndev = [\"mcp>=1\"]",
+      "[tool.uv]\ndev-dependencies = [\"mcp\"]",
+      "[tool.poetry.dev-dependencies]\nmcp = \"^1.0\"",
+      "[project]\ndependencies = [\"fastmcp>=2\"]"})
+  void pyproject_의_개발_의존성과_fastmcp_도_mcp_서버(String toml) {
+    assertThat(detect(new SourceFile("pyproject.toml", toml))).containsExactly(ToolKind.MCP_SERVER);
+  }
+
+  @Test
+  void requirements_변형_파일의_mcp_도_mcp_서버() {
+    assertThat(detect(new SourceFile("requirements-dev.txt", "mcp\n"))).containsExactly(ToolKind.MCP_SERVER);
+    assertThat(detect(new SourceFile("requirements/base.txt", "fastmcp==2\n"))).containsExactly(ToolKind.MCP_SERVER);
+    assertThat(detect(new SourceFile("docs/notes.txt", "mcp\n"))).containsExactly(ToolKind.GENERIC);
+  }
+
+  @Test
   void 플러그인_매니페스트면_plugin() {
     assertThat(detect(new SourceFile(".claude-plugin/plugin.json", "{}"))).containsExactly(ToolKind.PLUGIN);
     assertThat(detect(new SourceFile("plugins/x/.claude-plugin/plugin.json", "{}"))).containsExactly(ToolKind.PLUGIN);
