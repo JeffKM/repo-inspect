@@ -262,4 +262,17 @@ class PermissionScannerTest {
     assertThat(f.line()).isEqualTo(2);
     assertThat(f.snippet()).isEqualTo("const k = process.env.K;");
   }
+
+  @Test
+  void 같은_줄의_메일_주소가_앞_도메인을_삼키지_않는다() {
+    ScanResult r = scan(new SourceFile("a.js", "const hosts = [\"https://evil.io\",\"admin@corp.com\"];"));
+
+    assertThat(r.domains()).containsExactly("evil.io");
+  }
+
+  @Test
+  void allowed_tools_의_소문자_bash_도_찾는다() {
+    assertThat(ruleIds(scan(new SourceFile("skills/x/SKILL.md", "---\nallowed-tools: read, bash\n---"))))
+        .containsExactly("skill.allowed_tools_bash");
+  }
 }

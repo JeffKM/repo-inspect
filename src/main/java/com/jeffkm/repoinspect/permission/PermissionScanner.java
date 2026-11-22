@@ -17,7 +17,9 @@ public final class PermissionScanner {
   public static final int MAX_FINDINGS = 500;
   public static final int MAX_DOMAINS = 200;
   private static final int SNIPPET_MAX = 200;
-  private static final Pattern URL = Pattern.compile("https?://(?:[^@/?#\\s]{1,100}@)?([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)");
+  // 사용자 정보(user:pw@)는 URL 에 쓰이는 문자만 허용한다. 따옴표·괄호·쉼표까지 받으면 같은 줄 뒤의 메일 주소가 앞 도메인을 삼킨다
+  private static final Pattern URL = Pattern.compile(
+      "https?://(?:[A-Za-z0-9._~%!$&+=:-]{1,100}@)?([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)");
   private static final Set<String> LOCK_FILES =
       Set.of("package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "uv.lock");
 

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 final class SkillFrontmatter {
 
   private static final Pattern KEY = Pattern.compile("(?i)^allowed-tools\\s*:(.*)$");
-  private static final Pattern BASH = Pattern.compile("\\bBash\\b");
+  private static final Pattern BASH = Pattern.compile("(?i)\\bBash\\b");
 
   private SkillFrontmatter() {
   }
