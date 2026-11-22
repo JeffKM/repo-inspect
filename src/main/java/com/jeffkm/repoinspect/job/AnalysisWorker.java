@@ -18,8 +18,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /** 대기열에서 작업 하나를 꺼내 압축 파일을 읽고 권한 명세서를 저장한다. */
@@ -35,14 +41,26 @@ public class AnalysisWorker {
   private final ArchiveLimits limits;
   private final Clock clock;
   private final ObjectMapper objectMapper;
+  private final long readDeadlineSeconds;
+  private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor(r -> {
+    Thread thread = new Thread(r, "read-deadline");
+    thread.setDaemon(true);
+    return thread;
+  });
 
   public AnalysisWorker(JobRepository jobs, GitHubSource github, ArchiveLimits limits, Clock clock,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper, @Value("${repo-inspect.worker.read-deadline-seconds:120}") long readDeadlineSeconds) {
     this.jobs = jobs;
     this.github = github;
     this.limits = limits;
     this.clock = clock;
     this.objectMapper = objectMapper;
+    this.readDeadlineSeconds = readDeadlineSeconds;
+  }
+
+  @PreDestroy
+  void shutdown() {
+    deadlines.shutdownNow();
   }
 
   /** 꺼낼 작업이 있었으면 true. */
@@ -55,7 +73,10 @@ public class AnalysisWorker {
   private void process(ClaimedJob job) {
     Instant now = clock.instant();
     int claimed = job.attempts();
+    ScheduledFuture<?> deadline = null;
     try (InputStream in = github.openTarball(job.repo(), job.sha())) {
+      // HttpClient 에는 본문 읽기 시간 상한이 없다. 기한이 지나면 다른 스레드에서 스트림을 닫아 막힌 read 를 IOException 으로 깨운다
+      deadline = deadlines.schedule(() -> closeQuietly(in), readDeadlineSeconds, TimeUnit.SECONDS);
       ReadResult read = SafeTarReader.read(in, limits);
       Set<ToolKind> kinds = ToolKindDetector.detect(read.files());
       ScanResult scan = PermissionScanner.scan(read.files());
@@ -77,6 +98,18 @@ public class AnalysisWorker {
       } else {
         settle(job, jobs.reschedule(job.id(), claimed, now.plusSeconds(RETRY_BASE_SECONDS * claimed), true));
       }
+    } finally {
+      if (deadline != null) {
+        deadline.cancel(false);
+      }
+    }
+  }
+
+  private static void closeQuietly(InputStream in) {
+    try {
+      in.close();
+    } catch (Exception ignored) {
+      // 닫기 실패는 읽기 쪽 오류로 드러난다
     }
   }
 

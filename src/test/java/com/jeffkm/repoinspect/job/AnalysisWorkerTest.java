@@ -1,6 +1,7 @@
 package com.jeffkm.repoinspect.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -12,7 +13,11 @@ import com.jeffkm.repoinspect.github.RepoNotFoundException;
 import com.jeffkm.repoinspect.github.RepoRef;
 import com.jeffkm.repoinspect.support.PostgresTestConfig;
 import com.jeffkm.repoinspect.support.TarGz;
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +27,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest(properties = "repo-inspect.worker.enabled=false")
+@SpringBootTest(properties = {"repo-inspect.worker.enabled=false", "repo-inspect.worker.read-deadline-seconds=1"})
 @Import(PostgresTestConfig.class)
 class AnalysisWorkerTest {
 
@@ -121,6 +126,34 @@ class AnalysisWorkerTest {
 
     assertThat(jobs.findJob(jobId).orElseThrow().status()).isEqualTo("RUNNING");
     assertThat(jobs.findFindings(jobId)).isEmpty();
+    assertThat(jdbc.sql("select count(*) from analyzer_result where job_id = :id").param("id", jobId)
+        .query(Long.class).single()).isZero();
+  }
+
+  @Test
+  void 응답_본문이_멈추면_기한_뒤_스트림을_닫고_재시도_대기() {
+    CountDownLatch closed = new CountDownLatch(1);
+    when(github.openTarball(any(), anyString())).thenReturn(new InputStream() {
+      @Override
+      public int read() throws IOException {
+        try {
+          closed.await();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        throw new IOException("closed");
+      }
+
+      @Override
+      public void close() {
+        closed.countDown();
+      }
+    });
+
+    assertTimeoutPreemptively(Duration.ofSeconds(10), () -> worker.runOnce());
+
+    assertThat(jobs.findJob(jobId).orElseThrow().status()).isEqualTo("QUEUED");
+    assertThat(column("attempts", Integer.class)).isEqualTo(1);
   }
 
   <T> T column(String name, Class<T> type) {

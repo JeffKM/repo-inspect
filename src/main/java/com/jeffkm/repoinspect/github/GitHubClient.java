@@ -64,7 +64,7 @@ public class GitHubClient implements GitHubSource {
     String path = "/repos/%s/%s/tarball/%s".formatted(repo.owner(), repo.name(), sha);
     HttpResponse<InputStream> res =
         send(request(path, "application/vnd.github+json", TARBALL_TIMEOUT), BodyHandlers.ofInputStream());
-    // shortcut: 본문을 다 받는 시간에는 상한이 없다(크기 상한만). 느린 응답이 워커를 오래 잡는 일이 생기면 읽기 시간 상한을 추가
+    // 본문 읽기 시간 상한은 HttpClient 에 없어서 AnalysisWorker 가 기한 뒤 스트림을 닫는 것으로 막는다
     return new LimitedInputStream(res.body(), props.maxTarballBytes());
   }
 

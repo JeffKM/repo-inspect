@@ -1,4 +1,8 @@
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 2                      # 복구 스케줄이 폴링에 막히지 않게
   application:
     name: repo-inspect
   datasource:
@@ -18,3 +22,4 @@ repo-inspect:
   worker:
     enabled: true
     poll-ms: 1000
+    read-deadline-seconds: 120       # 압축 파일 본문을 읽는 시간 상한
