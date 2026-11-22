@@ -105,6 +105,9 @@ public class GitHubClient implements GitHubSource {
     if (status == 404) {
       throw new RepoNotFoundException(res.uri().getPath());
     }
+    if (status == 409) {
+      throw new EmptyRepositoryException(res.uri().getPath());
+    }
     boolean exhausted = "0".equals(res.headers().firstValue("x-ratelimit-remaining").orElse(null));
     boolean retryAfter = res.headers().firstValue("retry-after").isPresent();
     if (status == 429 || (status == 403 && (exhausted || retryAfter))) {

@@ -1,5 +1,6 @@
 package com.jeffkm.repoinspect.analysis;
 
+import com.jeffkm.repoinspect.github.EmptyRepositoryException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -228,5 +229,16 @@ class AnalysisApiTest {
 
   static long jobId(String json) {
     return ((Number) JsonPath.read(json, "$.data.jobId")).longValue();
+  }
+
+  @Test
+  void 빈_저장소는_409() throws Exception {
+    when(github.resolveHeadSha(any())).thenThrow(new EmptyRepositoryException("/repos/acme/empty/commits/main"));
+
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/empty")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error").value("빈 저장소라 분석할 코드가 없습니다"));
   }
 }

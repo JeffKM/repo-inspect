@@ -45,6 +45,12 @@ public final class TarGz {
     return this;
   }
 
+  /** FIFO, 문자 장치 같은 특수 항목. flag 는 TarConstants.LF_FIFO 등. */
+  public TarGz special(String name, byte flag) {
+    put(new TarArchiveEntry(name, flag), new byte[0]);
+    return this;
+  }
+
   public InputStream stream() {
     try {
       tar.finish();

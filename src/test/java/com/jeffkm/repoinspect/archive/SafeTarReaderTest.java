@@ -1,5 +1,6 @@
 package com.jeffkm.repoinspect.archive;
 
+import org.apache.commons.compress.archivers.tar.TarConstants;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jeffkm.repoinspect.support.TarGz;
@@ -117,5 +118,17 @@ class SafeTarReaderTest {
     ReadResult result = SafeTarReader.read(limitedDownload, LIMITS);
 
     assertThat(result.truncated()).isTrue();
+  }
+
+  @Test
+  void FIFO_와_장치_항목은_읽지_않는다() throws IOException {
+    var in = new TarGz()
+        .special("acme-x/pipe", TarConstants.LF_FIFO)
+        .special("acme-x/tty", TarConstants.LF_CHR)
+        .special("acme-x/disk", TarConstants.LF_BLK)
+        .file("acme-x/a.txt", "a")
+        .stream();
+
+    assertThat(SafeTarReader.read(in, LIMITS).files()).extracting(SourceFile::path).containsExactly("a.txt");
   }
 }

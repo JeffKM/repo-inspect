@@ -29,8 +29,10 @@ public final class SafeTarReader {
         new LimitedInputStream(new GzipCompressorInputStream(tarGz), limits.maxTotalBytes()))) {
       TarArchiveEntry entry;
       while ((entry = tar.getNextEntry()) != null) {
-        if (!entry.isFile() || entry.isSymbolicLink() || entry.isLink()) {
-          continue; // 폴더, 심볼릭 링크, 하드 링크
+        // isFile() 은 링크, FIFO, 장치 항목에도 true 라 따로 거른다
+        if (!entry.isFile() || entry.isSymbolicLink() || entry.isLink() || entry.isFIFO()
+            || entry.isCharacterDevice() || entry.isBlockDevice()) {
+          continue;
         }
         String path = normalize(entry.getName());
         if (path == null) {

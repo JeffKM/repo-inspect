@@ -1,6 +1,7 @@
 package com.jeffkm.repoinspect.common;
 
 import com.jeffkm.repoinspect.github.GitHubException;
+import com.jeffkm.repoinspect.github.EmptyRepositoryException;
 import com.jeffkm.repoinspect.github.InvalidRepoUrlException;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
@@ -48,6 +49,11 @@ public class GlobalExceptionHandler {
   ResponseEntity<ApiResponse<Void>> repoNotFound(RepoNotFoundException e) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(ApiResponse.fail("저장소를 찾을 수 없습니다(공개 저장소만 분석합니다)"));
+  }
+
+  @ExceptionHandler(EmptyRepositoryException.class)
+  ResponseEntity<ApiResponse<Void>> emptyRepository(EmptyRepositoryException e) {
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.fail("빈 저장소라 분석할 코드가 없습니다"));
   }
 
   @ExceptionHandler(RateLimitedException.class)

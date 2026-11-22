@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jeffkm.repoinspect.archive.ArchiveLimits;
 import com.jeffkm.repoinspect.archive.ReadResult;
 import com.jeffkm.repoinspect.archive.SafeTarReader;
+import com.jeffkm.repoinspect.archive.Submodules;
 import com.jeffkm.repoinspect.github.GitHubSource;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
@@ -94,6 +95,7 @@ public class AnalysisWorker {
       payload.put("primaryCounts", scan.findings().stream().filter(Finding::primary)
           .collect(Collectors.groupingBy(Finding::category, TreeMap::new, Collectors.counting())));
       payload.put("secondaryFindings", scan.findings().stream().filter(f -> !f.primary()).count());
+      payload.put("submodules", Submodules.paths(read.files()));
       settle(job, jobs.recordPermissionResult(job.id(), claimed, scan.findings(),
           objectMapper.writeValueAsString(payload), ToolKindDetector.label(kinds), clock.instant()));
     } catch (RateLimitedException e) {

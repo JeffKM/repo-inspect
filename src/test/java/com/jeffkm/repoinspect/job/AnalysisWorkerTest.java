@@ -189,4 +189,16 @@ class AnalysisWorkerTest {
         .doesNotContain("169.254.169.254");
     assertThat(jobs.findFindings(jobId)).extracting(Finding::primary).containsExactly(true, true, false);
   }
+
+  @Test
+  void 서브모듈은_분석하지_않은_부분으로_알린다() {
+    when(github.openTarball(any(), anyString())).thenReturn(new TarGz()
+        .file("acme-tool-d/.gitmodules", "[submodule \"lib\"]\n\tpath = vendor/lib\n")
+        .file("acme-tool-d/index.js", "console.log(1)")
+        .stream());
+
+    worker.runOnce();
+
+    assertThat(jobs.findJob(jobId).orElseThrow().permissionJson()).contains("\"submodules\": [\"vendor/lib\"]");
+  }
 }

@@ -215,4 +215,14 @@ class GitHubClientTest {
     assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
         .isInstanceOfSatisfying(GitHubException.class, e -> assertThat(e.getCause()).isNotNull());
   }
+
+  @Test
+  void 빈_저장소는_EmptyRepositoryException() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main").willReturn(aResponse().withStatus(409)
+        .withBody("{\"message\": \"Git Repository is empty.\"}")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO)).isInstanceOf(EmptyRepositoryException.class);
+  }
 }
