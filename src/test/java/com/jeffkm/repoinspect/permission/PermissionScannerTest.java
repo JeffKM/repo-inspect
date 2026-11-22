@@ -275,4 +275,16 @@ class PermissionScannerTest {
     assertThat(ruleIds(scan(new SourceFile("skills/x/SKILL.md", "---\nallowed-tools: read, bash\n---"))))
         .containsExactly("skill.allowed_tools_bash");
   }
+
+  @Test
+  void 모르는_확장자의_코드도_코드_규칙을_받는다() {
+    assertThat(ruleIds(scan(new SourceFile("lib/payload.dat", "require('child_process')"))))
+        .contains("node.child_process");
+  }
+
+  @Test
+  void requirements_의_추가_인덱스_도메인을_모은다() {
+    var r = scan(new SourceFile("requirements.txt", "--extra-index-url https://pkgs.evil-mirror.io/simple"));
+    assertThat(r.domains()).contains("pkgs.evil-mirror.io");
+  }
 }

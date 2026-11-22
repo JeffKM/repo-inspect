@@ -1,5 +1,6 @@
 package com.jeffkm.repoinspect.permission;
 
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -12,13 +13,14 @@ public record FileRole(Kind kind, boolean mainLocation) {
 
   public enum Kind { CODE, INSTRUCTION, CONFIG, DOC }
 
-  private static final Set<String> CODE_EXT = Set.of("js", "mjs", "cjs", "ts", "mts", "cts", "jsx", "tsx", "py",
-      "java", "kt", "kts", "go", "rs", "rb", "php", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "cs", "swift",
-      "lua", "pl");
+  // 코드 규칙을 걸면 base64·URL 소음만 늘어나는 확장자. 그 밖의 알 수 없는 확장자는 코드로 본다
+  private static final Set<String> CONFIG_EXT = Set.of("json", "jsonc", "json5", "yaml", "yml", "toml", "ini", "cfg",
+      "conf", "xml", "properties", "lock", "env", "svg", "css", "scss", "less", "csv", "tsv", "map", "snap", "log",
+      "patch", "diff");
   private static final Set<String> DOC_EXT = Set.of("md", "mdx", "txt", "rst", "adoc");
   // 에이전트가 지시로 읽는 파일. 설명문이 아니라 실행 지시라서 문서와 따로 본다
   private static final Set<String> INSTRUCTION_FILES = Set.of("SKILL.md", "CLAUDE.md", "AGENTS.md", "GEMINI.md");
-  private static final Set<String> INSTRUCTION_DIRS = Set.of("commands", "agents");
+  private static final Set<String> INSTRUCTION_DIRS = Set.of("commands", "agents", "skills");
   private static final Set<String> SIDE_DIRS = Set.of("test", "tests", "__tests__", "spec", "specs", "testdata",
       "test-data", "fixtures", "__fixtures__", "__mocks__", "e2e", "example", "examples", "sample", "samples", "demo",
       "demos", "doc", "docs", "benchmark", "benchmarks", ".github");
@@ -26,10 +28,12 @@ public record FileRole(Kind kind, boolean mainLocation) {
   private static final Pattern TEST_FILE = Pattern.compile(
       "test_.*\\.py|.*_test\\.(py|go|rb)|.*\\.(test|spec)\\.[cm]?[jt]sx?|.*Tests?\\.(java|kt)|conftest\\.py");
 
+  private static final Pattern REQUIREMENTS = Pattern.compile("requirements.*\\.txt");
+
   public static FileRole of(String path, String content) {
     String[] segments = path.split("/");
     String base = segments[segments.length - 1];
-    String parent = segments.length > 1 ? segments[segments.length - 2] : "";
+    String[] ancestors = Arrays.copyOf(segments, segments.length - 1);
     boolean main = !TEST_FILE.matcher(base).matches();
     for (int i = 0; i < segments.length - 1 && main; i++) {
       // src/main 아래는 패키지 이름(com/example/demo 등)이라 저장소 배치로 보지 않는다
@@ -38,22 +42,26 @@ public record FileRole(Kind kind, boolean mainLocation) {
       }
       main = !SIDE_DIRS.contains(segments[i].toLowerCase(Locale.ROOT));
     }
-    return new FileRole(kindOf(base, parent, content), main);
+    return new FileRole(kindOf(base, ancestors, content), main);
   }
 
-  private static Kind kindOf(String base, String parent, String content) {
+  private static Kind kindOf(String base, String[] ancestors, String content) {
     int dot = base.lastIndexOf('.');
-    String ext = dot < 0 ? "" : base.substring(dot + 1).toLowerCase(Locale.ROOT);
-    if (INSTRUCTION_FILES.contains(base) || (ext.equals("md") && INSTRUCTION_DIRS.contains(parent))) {
+    String ext = dot <= 0 ? "" : base.substring(dot + 1).toLowerCase(Locale.ROOT);
+    if (INSTRUCTION_FILES.contains(base) || (ext.equals("md") && Arrays.stream(ancestors).anyMatch(INSTRUCTION_DIRS::contains))) {
       return Kind.INSTRUCTION;
     }
-    if (CODE_EXT.contains(ext) || (dot < 0 && content.startsWith("#!"))) {
-      return Kind.CODE;
+    if (ext.isEmpty()) {
+      return content.startsWith("#!") || content.startsWith("\uFEFF#!") ? Kind.CODE : Kind.CONFIG;
+    }
+    if (REQUIREMENTS.matcher(base).matches()) {
+      return Kind.CONFIG;
     }
     if (DOC_EXT.contains(ext)) {
       return Kind.DOC;
     }
-    return Kind.CONFIG;
+    // 모르는 확장자를 CONFIG 로 두면 이름만 바꿔(require('./payload.dat')) 코드 규칙을 피할 수 있다
+    return CONFIG_EXT.contains(ext) ? Kind.CONFIG : Kind.CODE;
   }
 
   /** 문서의 설치 안내(curl | bash 등)는 사용자가 그대로 따라 하므로 본 위치면 주요로 본다. */

@@ -29,7 +29,23 @@ class FileRoleTest {
       "src/__mocks__/fs.js, CODE, false",
       ".github/ISSUE_TEMPLATE/bug.yml, CONFIG, false",
       "package.json, CONFIG, true",
-      "hooks/hooks.json, CONFIG, true"})
+      "hooks/hooks.json, CONFIG, true",
+      "web/App.vue, CODE, true",
+      "index.html, CODE, true",
+      "native/a.c, CODE, true",
+      "lib/payload.dat, CODE, true",
+      "Dockerfile, CONFIG, true",
+      "Makefile, CONFIG, true",
+      "requirements.txt, CONFIG, true",
+      "requirements-dev.txt, CONFIG, true",
+      "notes.txt, DOC, true",
+      "config/app.yaml, CONFIG, true",
+      "assets/logo.svg, CONFIG, true",
+      ".npmrc, CONFIG, true",
+      ".claude/commands/git/commit.md, INSTRUCTION, true",
+      "skills/pdf/reference.md, INSTRUCTION, true",
+      "docs/agents/intro.md, INSTRUCTION, false",
+      "src/README.md, DOC, true"})
   void 경로로_종류와_위치를_정한다(String path, FileRole.Kind kind, boolean main) {
     assertThat(FileRole.of(path, "")).isEqualTo(new FileRole(kind, main));
   }
@@ -38,6 +54,8 @@ class FileRoleTest {
   void 확장자_없는_파일은_셔뱅이_있으면_코드() {
     assertThat(FileRole.of("bin/run", "#!/bin/sh\necho hi").kind()).isEqualTo(FileRole.Kind.CODE);
     assertThat(FileRole.of("LICENSE", "MIT License").kind()).isEqualTo(FileRole.Kind.CONFIG);
+    assertThat(FileRole.of("bin/tool", "#!/bin/sh").kind()).isEqualTo(FileRole.Kind.CODE);
+    assertThat(FileRole.of("bin/tool", "\uFEFF#!/bin/sh").kind()).isEqualTo(FileRole.Kind.CODE);
   }
 
   @Test
