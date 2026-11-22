@@ -63,7 +63,21 @@ class SafeTarReaderTest {
     ReadResult result = SafeTarReader.read(in, LIMITS);
 
     assertThat(result.files()).extracting(SourceFile::path).containsExactly("small.txt");
+    assertThat(result.truncated()).isTrue();
+    assertThat(result.skippedFiles()).isEqualTo(2);
+  }
+
+  @Test
+  void 바이너리만_건너뛰면_일부만_분석으로_표시하지_않는다() throws IOException {
+    var in = new TarGz()
+        .file("top/image.png", new byte[] {(byte) 0x89, 'P', 'N', 'G', 0, 0, 1})
+        .file("top/small.txt", "small")
+        .stream();
+
+    ReadResult result = SafeTarReader.read(in, LIMITS);
+
     assertThat(result.truncated()).isFalse();
+    assertThat(result.skippedFiles()).isEqualTo(1);
   }
 
   @Test

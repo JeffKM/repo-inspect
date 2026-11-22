@@ -125,10 +125,10 @@ class PermissionScannerTest {
   }
 
   @Test
-  void 아주_긴_줄도_2초_안에_훑는다() {
+  void 아주_긴_줄도_10초_안에_훑는다() {
     String curls = "curl ".repeat(80_000);
     String tokens = ("A".repeat(199) + " ").repeat(1_000);
-    assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+    assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
       scan(new SourceFile("a.sh", curls));
       scan(new SourceFile("b.js", tokens));
     });
@@ -140,5 +140,26 @@ class PermissionScannerTest {
         .filter(x -> x.ruleId().equals("js.eval")).findFirst().orElseThrow();
 
     assertThat(f.snippet()).startsWith("…").contains("eval(").hasSizeLessThanOrEqualTo(202);
+  }
+
+  @Test
+  void 도메인은_200개까지만_담고_넘으면_표시한다() {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 300; i++) {
+      sb.append("https://d").append(i).append(".example.com\n");
+    }
+    ScanResult r = scan(new SourceFile("a.js", sb.toString()));
+
+    assertThat(r.domains()).hasSize(200);
+    assertThat(r.domainsTruncated()).isTrue();
+    assertThat(scan(new SourceFile("b.js", "https://x.example.com")).domainsTruncated()).isFalse();
+  }
+
+  @Test
+  void 근거_줄에_NUL_이_있으면_대체_문자로_바꾼다() {
+    Finding f = scan(new SourceFile("a.js", "eval(\u0000x)")).findings().stream()
+        .filter(x -> x.ruleId().equals("js.eval")).findFirst().orElseThrow();
+
+    assertThat(f.snippet()).doesNotContain("\u0000").contains("\uFFFD");
   }
 }

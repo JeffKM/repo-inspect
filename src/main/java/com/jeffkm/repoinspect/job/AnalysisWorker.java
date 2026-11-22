@@ -83,7 +83,9 @@ public class AnalysisWorker {
       Map<String, Object> payload = new LinkedHashMap<>();
       payload.put("truncated", read.truncated());
       payload.put("fileCount", read.files().size());
+      payload.put("skippedFiles", read.skippedFiles());
       payload.put("domains", scan.domains());
+      payload.put("domainsTruncated", scan.domainsTruncated());
       payload.put("findingsTruncated", scan.findingsTruncated());
       settle(job, jobs.recordPermissionResult(job.id(), claimed, scan.findings(),
           objectMapper.writeValueAsString(payload), ToolKindDetector.label(kinds), clock.instant()));

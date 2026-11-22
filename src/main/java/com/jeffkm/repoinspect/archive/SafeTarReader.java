@@ -23,6 +23,8 @@ public final class SafeTarReader {
   public static ReadResult read(InputStream tarGz, ArchiveLimits limits) throws IOException {
     List<SourceFile> files = new ArrayList<>();
     int seen = 0;
+    int skipped = 0;
+    boolean oversized = false;
     try (TarArchiveInputStream tar = new TarArchiveInputStream(
         new LimitedInputStream(new GzipCompressorInputStream(tarGz), limits.maxTotalBytes()))) {
       TarArchiveEntry entry;
@@ -35,20 +37,23 @@ public final class SafeTarReader {
           continue;
         }
         if (++seen > limits.maxFiles()) {
-          return new ReadResult(files, true);
+          return new ReadResult(files, true, skipped);
         }
         if (entry.getSize() > limits.maxFileBytes()) {
+          skipped++;
+          oversized = true;
           continue;
         }
         byte[] bytes = tar.readNBytes((int) entry.getSize());
         if (isBinary(bytes)) {
+          skipped++;
           continue;
         }
         files.add(new SourceFile(path, new String(bytes, StandardCharsets.UTF_8)));
       }
-      return new ReadResult(files, false);
+      return new ReadResult(files, oversized, skipped);
     } catch (LimitExceededException e) {
-      return new ReadResult(files, true);
+      return new ReadResult(files, true, skipped);
     }
   }
 

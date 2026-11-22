@@ -75,6 +75,17 @@ class AnalysisWorkerTest {
   }
 
   @Test
+  void 앞_8000바이트_뒤에_NUL_이_있어도_DONE() {
+    when(github.openTarball(any(), anyString())).thenReturn(new TarGz()
+        .file("acme-tool-d/a.js", "x".repeat(9000) + "\u0000 eval(1)")
+        .stream());
+
+    worker.runOnce();
+
+    assertThat(jobs.findJob(jobId).orElseThrow().status()).isEqualTo("DONE");
+  }
+
+  @Test
   void GitHub_한도_초과면_재설정_시각으로_미루고_시도_횟수는_세지_않는다() {
     Instant reset = Instant.parse("2030-01-01T00:00:00Z");
     when(github.openTarball(any(), anyString())).thenThrow(new RateLimitedException(reset));

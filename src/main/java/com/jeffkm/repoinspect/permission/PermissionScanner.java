@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 public final class PermissionScanner {
 
   public static final int MAX_FINDINGS = 500;
+  public static final int MAX_DOMAINS = 200;
   private static final int SNIPPET_MAX = 200;
   private static final Pattern URL = Pattern.compile("https?://([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)");
   private static final Set<String> LOCK_FILES =
@@ -25,6 +26,7 @@ public final class PermissionScanner {
     List<Finding> found = new ArrayList<>();
     Set<String> domains = new TreeSet<>();
     boolean truncated = false;
+    boolean domainsTruncated = false;
     for (SourceFile f : files) {
       String base = f.path().substring(f.path().lastIndexOf('/') + 1);
       if (LOCK_FILES.contains(base)) {
@@ -52,17 +54,22 @@ public final class PermissionScanner {
         if (collectDomains) {
           Matcher m = URL.matcher(line);
           while (m.find()) {
-            domains.add(m.group(1).toLowerCase(Locale.ROOT));
+            String d = m.group(1).toLowerCase(Locale.ROOT);
+            if (domains.size() < MAX_DOMAINS) {
+              domains.add(d);
+            } else if (!domains.contains(d)) {
+              domainsTruncated = true;
+            }
           }
         }
       }
     }
-    return new ScanResult(found, domains, truncated);
+    return new ScanResult(found, domains, truncated, domainsTruncated);
   }
 
   /** 200자 이하면 그대로, 길면 걸린 위치(matchStart, 원본 줄 기준) 앞 40자부터 200자 창을 잘라 보여준다. */
   static String snippet(String line, int matchStart) {
-    String t = line.strip();
+    String t = line.strip().replace('\u0000', '\uFFFD'); // NUL 은 PostgreSQL text 에 저장되지 않는다
     if (t.length() <= SNIPPET_MAX) {
       return t;
     }
