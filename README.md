@@ -27,12 +27,14 @@ AI 도구 저장소(skills, hooks, MCP 서버, 플러그인)를 설치하기 전
 | `POST /api/analyses` `{"url": "https://github.com/owner/repo"}` | 분석 요청. 202 와 작업 번호 |
 | `GET /api/analyses/{id}` | 진행 상태와 결과 |
 
-모든 응답은 `{"success": true|false, "data": ..., "error": ...}` 형태입니다.
+모든 응답은 `{"success": true|false, "data": ..., "error": ...}` 형태입니다. 오류면 `success` 가 false, `data` 가 null 이고 `error` 에 한국어 안내가 들어갑니다.
 
 | 상태 | 언제 |
 |---|---|
-| 400 | github.com 저장소 주소가 아님 |
+| 400 | github.com 저장소 주소가 아니거나, 본문에 url 이 없거나, JSON 형식이 깨짐 |
 | 404 | 없는 저장소(공개 저장소만 분석) 또는 없는 분석 |
+| 405 | 지원하지 않는 요청 방식(`Allow` 헤더로 허용 방식 안내) |
+| 415 | JSON 이 아닌 본문(`Accept` 헤더로 받는 형식 안내) |
 | 409 | 커밋이 없는 빈 저장소 |
 | 429 | 같은 IP 의 분석 요청이 1분 상한을 넘음(`Retry-After`) |
 | 502 | GitHub 응답 오류 |
