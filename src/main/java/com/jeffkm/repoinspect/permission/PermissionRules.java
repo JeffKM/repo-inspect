@@ -33,7 +33,7 @@ public final class PermissionRules {
       Rule.of("env.dotenv", SECRETS, "\\bdotenv\\b|[\"']\\.env[\"']"),
 
       Rule.onlyIn("package.json", "npm.lifecycle", INSTALL_SCRIPT, "\"(preinstall|install|postinstall)\"\\s*:"),
-      Rule.of("pipe.to_shell", INSTALL_SCRIPT, "(curl|wget)[^\\n|]*\\|\\s*(ba|z)?sh\\b"),
+      Rule.of("pipe.to_shell", INSTALL_SCRIPT, "(curl|wget)[^\\n|]{0,500}\\|\\s*(ba|z)?sh\\b"),
 
       Rule.of("js.eval", OBFUSCATION, "\\beval\\s*\\(|new\\s+Function\\s*\\("),
       Rule.of("long.base64", OBFUSCATION, "[A-Za-z0-9+/]{200,}={0,2}")

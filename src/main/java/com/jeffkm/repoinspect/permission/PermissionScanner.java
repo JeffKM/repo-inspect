@@ -36,14 +36,18 @@ public final class PermissionScanner {
       for (int i = 0; i < lines.length; i++) {
         String line = lines[i];
         for (Rule rule : PermissionRules.ALL) {
-          if (!rule.appliesTo(f.path()) || !rule.pattern().matcher(line).find()) {
+          if (!rule.appliesTo(f.path())) {
+            continue;
+          }
+          Matcher rm = rule.pattern().matcher(line);
+          if (!rm.find()) {
             continue;
           }
           if (found.size() >= MAX_FINDINGS) {
             truncated = true;
             continue;
           }
-          found.add(new Finding(rule.category().name(), rule.id(), f.path(), i + 1, snippet(line)));
+          found.add(new Finding(rule.category().name(), rule.id(), f.path(), i + 1, snippet(line, rm.start())));
         }
         if (collectDomains) {
           Matcher m = URL.matcher(line);
@@ -56,8 +60,15 @@ public final class PermissionScanner {
     return new ScanResult(found, domains, truncated);
   }
 
-  static String snippet(String line) {
+  /** 200자 이하면 그대로, 길면 걸린 위치(matchStart, 원본 줄 기준) 앞 40자부터 200자 창을 잘라 보여준다. */
+  static String snippet(String line, int matchStart) {
     String t = line.strip();
-    return t.length() <= SNIPPET_MAX ? t : t.substring(0, SNIPPET_MAX) + "…";
+    if (t.length() <= SNIPPET_MAX) {
+      return t;
+    }
+    int lead = line.length() - line.stripLeading().length();
+    int start = Math.max(0, Math.min(matchStart - lead, t.length() - 1) - 40);
+    int end = Math.min(t.length(), start + SNIPPET_MAX);
+    return (start > 0 ? "…" : "") + t.substring(start, end) + (end < t.length() ? "…" : "");
   }
 }

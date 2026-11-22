@@ -1,8 +1,10 @@
 package com.jeffkm.repoinspect.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.jeffkm.repoinspect.archive.SourceFile;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -120,5 +122,23 @@ class PermissionScannerTest {
     Finding f = scan(new SourceFile("a.js", line)).findings().get(0);
 
     assertThat(f.snippet()).hasSize(201).endsWith("…");
+  }
+
+  @Test
+  void 아주_긴_줄도_2초_안에_훑는다() {
+    String curls = "curl ".repeat(80_000);
+    String tokens = ("A".repeat(199) + " ").repeat(1_000);
+    assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+      scan(new SourceFile("a.sh", curls));
+      scan(new SourceFile("b.js", tokens));
+    });
+  }
+
+  @Test
+  void 근거_줄은_걸린_위치를_포함한다() {
+    Finding f = scan(new SourceFile("a.js", "a".repeat(5000) + " eval(x)")).findings().stream()
+        .filter(x -> x.ruleId().equals("js.eval")).findFirst().orElseThrow();
+
+    assertThat(f.snippet()).startsWith("…").contains("eval(").hasSizeLessThanOrEqualTo(202);
   }
 }
