@@ -5,12 +5,24 @@ spring:
         size: 2                      # 복구 스케줄이 폴링에 막히지 않게
   application:
     name: repo-inspect
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      timeout: 500ms                 # Redis 가 느리면 기다리지 않고 제한 없이 통과시킨다
+      connect-timeout: 500ms
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5434/repoinspect}
     username: ${DB_USERNAME:repoinspect}
     password: ${DB_PASSWORD:repoinspect}
 
+server:
+  # 앞단 프록시(사설 대역)가 준 X-Forwarded-For 만 믿는다. 공인 IP 에서 온 헤더는 무시된다
+  forward-headers-strategy: native
+
 repo-inspect:
+  rate-limit:
+    analyses-per-minute: 10          # 같은 IP 의 분석 요청 1분 상한
   github:
     base-url: https://api.github.com
     token: ${GITHUB_TOKEN:}

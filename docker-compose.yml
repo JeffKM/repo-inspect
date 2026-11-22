@@ -8,3 +8,8 @@ services:
       POSTGRES_PASSWORD: repoinspect
     ports:
       - "127.0.0.1:5434:5432"
+  redis:
+    image: redis:7-alpine
+    container_name: repo-inspect-redis
+    ports:
+      - "127.0.0.1:6380:6379"

@@ -1,5 +1,6 @@
 package com.jeffkm.repoinspect.common;
 
+import com.jeffkm.repoinspect.analysis.TooManyRequestsException;
 import com.jeffkm.repoinspect.github.GitHubException;
 import com.jeffkm.repoinspect.github.EmptyRepositoryException;
 import com.jeffkm.repoinspect.github.InvalidRepoUrlException;
@@ -62,6 +63,13 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
         .body(ApiResponse.fail("GitHub 요청 한도에 걸렸습니다. 잠시 뒤 다시 시도해 주세요"));
+  }
+
+  @ExceptionHandler(TooManyRequestsException.class)
+  ResponseEntity<ApiResponse<Void>> tooManyRequests(TooManyRequestsException e) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfterSeconds()))
+        .body(ApiResponse.fail("분석 요청이 많습니다. 잠시 뒤 다시 시도해 주세요"));
   }
 
   @ExceptionHandler(GitHubException.class)

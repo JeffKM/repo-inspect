@@ -28,6 +28,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -46,12 +48,18 @@ class AnalysisApiTest {
   AnalysisWorker worker;
   @Autowired
   JdbcClient jdbc;
+  @Autowired
+  StringRedisTemplate redis;
   @MockitoBean
   GitHubSource github;
 
   @BeforeEach
   void clean() {
     jdbc.sql("truncate finding, analyzer_result, analysis_job, repository restart identity cascade").update();
+    redis.execute((RedisCallback<Void>) c -> {
+      c.serverCommands().flushAll();
+      return null;
+    });
   }
 
   String body(String url) {
