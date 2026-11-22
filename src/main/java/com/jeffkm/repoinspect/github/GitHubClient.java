@@ -124,7 +124,8 @@ public class GitHubClient implements GitHubSource {
     if (status == 404) {
       throw new RepoNotFoundException(res.uri().getPath());
     }
-    if (status == 409) {
+    // 빈 저장소는 커밋 조회에서만 409 다. 다른 호출의 409 는 일반 오류로 둔다
+    if (status == 409 && res.uri().getPath().contains("/commits/")) {
       throw new EmptyRepositoryException(res.uri().getPath());
     }
     boolean exhausted = "0".equals(res.headers().firstValue("x-ratelimit-remaining").orElse(null));

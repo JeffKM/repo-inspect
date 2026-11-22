@@ -39,14 +39,18 @@ public final class PermissionRules {
 
       Rule.onlyIn("package.json", "npm.lifecycle", INSTALL_SCRIPT, "\"(preinstall|install|postinstall)\"\\s*:"),
       Rule.of("pipe.to_shell", INSTALL_SCRIPT,
-          "(curl|wget)[^\\n|]{0,500}\\|\\s*(sudo\\s+(-[A-Za-z]+\\s+){0,3})?(ba|z)?sh\\b",
+          "(curl|wget)[^\\n|]{0,500}\\|\\s*(sudo\\s+(-[A-Za-z]+\\s+(\\w+\\s+)?){0,3})?(ba|z)?sh\\b",
           CODE, INSTRUCTION, CONFIG, DOC),
       Rule.of("pipe.shell_subst", INSTALL_SCRIPT,
-          "\\b(ba|z)?sh\\s+(<\\(\\s*|-c\\s+[\"']?\\$\\(\\s*)(curl|wget)\\b",
+          "(?:\\b(?:ba|z)?sh\\s+(?:<\\(|-c\\s+[\"']?\\$\\()|\\beval\\s+[\"']?\\$\\(|(?:\\bsource|(?:^|\\s)\\.)\\s+<\\()"
+              + "\\s*(?:curl|wget)\\b",
           CODE, INSTRUCTION, CONFIG, DOC),
 
       Rule.of("js.eval", OBFUSCATION, "\\beval\\s*\\(|new\\s+Function\\s*\\(", CODE),
-      Rule.of("long.base64", OBFUSCATION, "[A-Za-z0-9+/]{200,}={0,2}", CODE, INSTRUCTION)
+      // 이미지 data URI 와 노트북 출력 이미지는 소음이라 뺀다. 실행 코드를 담는 data:text/javascript 같은 것은 그대로 잡는다
+      Rule.of("long.base64", OBFUSCATION,
+          "(?<![A-Za-z0-9+/])(?<!data:image/(?:png|jpeg|gif|webp|svg\\+xml);base64,)(?<!\"image/(?:png|jpeg)\": \")"
+              + "[A-Za-z0-9+/]{200,}={0,2}", CODE, INSTRUCTION)
   );
 
   private PermissionRules() {

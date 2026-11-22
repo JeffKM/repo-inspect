@@ -273,6 +273,15 @@ class GitHubClientTest {
   }
 
   @Test
+  void 압축_파일_호출의_409_는_빈_저장소가_아니다() {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(409)));
+
+    assertThatThrownBy(() -> client("", 1000).openTarball(REPO, SHA))
+        .isInstanceOf(GitHubException.class)
+        .isNotInstanceOf(EmptyRepositoryException.class);
+  }
+
+  @Test
   void openTarball_은_SHA_형식이_아니면_요청하지_않는다() {
     assertThatThrownBy(() -> client("", 1000).openTarball(REPO, "../../x")).isInstanceOf(IllegalArgumentException.class);
     assertThat(server.findAll(anyRequestedFor(anyUrl()))).isEmpty();

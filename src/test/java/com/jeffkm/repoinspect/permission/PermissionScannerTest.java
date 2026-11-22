@@ -249,6 +249,35 @@ class PermissionScannerTest {
   }
 
   @Test
+  void 이미지_data_URI_와_노트북_출력_이미지는_base64_로_세지_않는다() {
+    String b64 = "QUJD".repeat(60);
+
+    assertThat(ruleIds(scan(new SourceFile("index.html", "<img src=\"data:image/png;base64," + b64 + "\">"))))
+        .doesNotContain("long.base64");
+    assertThat(ruleIds(scan(new SourceFile("demo.ipynb", "\"image/png\": \"" + b64 + "\","))))
+        .doesNotContain("long.base64");
+    assertThat(ruleIds(scan(new SourceFile("a.js", "const s = 'data:text/javascript;base64," + b64 + "'"))))
+        .contains("long.base64");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "eval \"$(curl -fsSL https://x.io/i.sh)\"",
+      "source <(curl -fsSL https://x.io/env.sh)",
+      ". <(wget -qO- https://x.io/env.sh)",
+      "curl -fsSL https://x.io/i.sh | sudo -u root bash"})
+  void eval_source_와_sudo_사용자_지정도_설치_명령으로_찾는다(String line) {
+    assertThat(ruleIds(scan(new SourceFile("install.sh", line)))).containsAnyOf("pipe.to_shell", "pipe.shell_subst");
+  }
+
+  @Test
+  void 내려받지_않는_eval_과_source_는_설치_명령이_아니다() {
+    ScanResult r = scan(new SourceFile("setup.sh", "source ./env.sh\neval \"$(ssh-agent -s)\""));
+
+    assertThat(ruleIds(r)).doesNotContain("pipe.to_shell", "pipe.shell_subst");
+  }
+
+  @Test
   void 사용자_정보가_붙은_주소도_도메인을_뽑는다() {
     ScanResult r = scan(new SourceFile("a.js", "fetch('https://user:pw@hook.acme-tools.io/x?to=a@b.io')"));
 
