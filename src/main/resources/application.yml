@@ -8,7 +8,7 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6380}
+      port: ${REDIS_PORT:6381}
       timeout: 500ms                 # Redis 가 느리면 기다리지 않고 제한 없이 통과시킨다
       connect-timeout: 500ms
   datasource:
