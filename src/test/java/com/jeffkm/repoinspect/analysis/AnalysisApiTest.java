@@ -2,6 +2,7 @@ package com.jeffkm.repoinspect.analysis;
 
 import com.jeffkm.repoinspect.github.EmptyRepositoryException;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -35,7 +36,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = "repo-inspect.worker.enabled=false")
+@SpringBootTest(properties = {"repo-inspect.worker.enabled=false",
+    "repo-inspect.dispute-url=https://example.com/dispute"})
 @AutoConfigureMockMvc
 @Import(PostgresTestConfig.class)
 class AnalysisApiTest {
@@ -115,7 +117,23 @@ class AnalysisApiTest {
         .andExpect(jsonPath("$.data.findings[0].primary").value(true))
         .andExpect(jsonPath("$.data.findings[1].ruleId").value("net.http_call"))
         .andExpect(jsonPath("$.data.permission.domains[0]").value("api.example.com"))
-        .andExpect(jsonPath("$.data.permission.truncated").value(false));
+        .andExpect(jsonPath("$.data.permission.truncated").value(false))
+        .andExpect(jsonPath("$.data.analyzedAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.notice").value("발견된 신호와 근거 줄입니다. 신호가 없다고 안전하다는 뜻은 아닙니다."))
+        .andExpect(jsonPath("$.data.disputeUrl").value("https://example.com/dispute"));
+  }
+
+  @Test
+  void 끝나기_전에는_분석_시각이_없고_안내_문구는_있다() throws Exception {
+    when(github.resolveHeadSha(any())).thenReturn(SHA);
+    String created = mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/tool")))
+        .andReturn().getResponse().getContentAsString();
+
+    mvc.perform(get("/api/analyses/" + jobId(created)))
+        .andExpect(jsonPath("$.data.status").value("QUEUED"))
+        .andExpect(jsonPath("$.data.analyzedAt").value(nullValue()))
+        .andExpect(jsonPath("$.data.notice").isNotEmpty());
   }
 
   @Test

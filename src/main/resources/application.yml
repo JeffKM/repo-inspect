@@ -23,6 +23,7 @@ server:
 repo-inspect:
   rate-limit:
     analyses-per-minute: 10          # 같은 IP 의 분석 요청 1분 상한
+  dispute-url: ${DISPUTE_URL:}      # 저장소 주인용 이의 제기 창구(비우면 응답에서 null)
   github:
     base-url: https://api.github.com
     token: ${GITHUB_TOKEN:}

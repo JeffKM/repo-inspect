@@ -184,16 +184,20 @@ public class JobRepository {
 
   public Optional<JobView> findJob(long jobId) {
     return jdbc.sql("""
-            select j.id, r.owner, r.name, j.commit_sha, j.status, j.tool_kind, j.error, ar.payload::text as permission
+            select j.id, r.owner, r.name, j.commit_sha, j.status, j.tool_kind, j.error, j.finished_at,
+                   ar.payload::text as permission
             from analysis_job j
             join repository r on r.id = j.repo_id
             left join analyzer_result ar on ar.job_id = j.id and ar.analyzer = 'PERMISSION'
             where j.id = :id
             """)
         .param("id", jobId)
-        .query((rs, n) -> new JobView(rs.getLong("id"), rs.getString("owner"), rs.getString("name"),
-            rs.getString("commit_sha"), rs.getString("status"), rs.getString("tool_kind"), rs.getString("error"),
-            rs.getString("permission")))
+        .query((rs, n) -> {
+          OffsetDateTime finished = rs.getObject("finished_at", OffsetDateTime.class);
+          return new JobView(rs.getLong("id"), rs.getString("owner"), rs.getString("name"),
+              rs.getString("commit_sha"), rs.getString("status"), rs.getString("tool_kind"), rs.getString("error"),
+              rs.getString("permission"), finished == null ? null : finished.toInstant());
+        })
         .optional();
   }
 
