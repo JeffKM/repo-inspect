@@ -49,7 +49,7 @@ class AnalysisWorkerTest {
   @BeforeEach
   void setUp() {
     jdbc.sql("truncate finding, analyzer_result, analysis_job, repository restart identity cascade").update();
-    jobId = jobs.enqueue(jobs.upsertRepository(new RepoRef("acme", "tool")), SHA);
+    jobId = jobs.enqueue(jobs.upsertRepository(new RepoRef("acme", "tool")), SHA, Instant.now());
   }
 
   @Test

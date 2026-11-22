@@ -36,15 +36,17 @@ public class JobRepository {
         .single();
   }
 
-  /** 같은 커밋의 결과는 바뀌지 않으므로 작업은 하나만. 이미 있으면 그 작업 id 를 돌려준다. */
-  public long enqueue(long repoId, String sha) {
+  /** 같은 커밋의 결과는 바뀌지 않으므로 작업은 하나만. 이미 있으면 그 작업 id 를 돌려준다. 시각은 앱이 정한다. */
+  public long enqueue(long repoId, String sha, Instant now) {
     Optional<Long> created = jdbc.sql("""
-            insert into analysis_job (repo_id, commit_sha) values (:repoId, :sha)
+            insert into analysis_job (repo_id, commit_sha, next_run_at, created_at)
+            values (:repoId, :sha, :now, :now)
             on conflict (repo_id, commit_sha) do nothing
             returning id
             """)
         .param("repoId", repoId)
         .param("sha", sha)
+        .param("now", ts(now))
         .query(Long.class)
         .optional();
     return created.orElseGet(() -> jdbc.sql("select id from analysis_job where repo_id = :repoId and commit_sha = :sha")

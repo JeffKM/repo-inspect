@@ -36,8 +36,8 @@ public class AnalysisService {
   public CreatedAnalysis create(String url) {
     RepoRef ref = RepoRef.parse(url);
     String sha = github.resolveHeadSha(ref);
-    long jobId = jobs.enqueue(jobs.upsertRepository(ref), sha);
     Instant now = clock.instant();
+    long jobId = jobs.enqueue(jobs.upsertRepository(ref), sha, now);
     jobs.requeueFailed(jobId, now.minus(FAILED_RETRY_AFTER), now);
     JobView v = jobs.findJob(jobId).orElseThrow();
     return new CreatedAnalysis(v.id(), v.owner(), v.name(), v.commitSha(), v.status());

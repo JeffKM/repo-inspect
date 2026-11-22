@@ -30,7 +30,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 class JobRepositoryTest {
 
   static final String SHA = "b".repeat(40);
-  // next_run_at 기본값이 DB 의 now() 라서 테스트 기준 시각은 실제 현재보다 뒤여야 한다. DB 는 마이크로초까지라 초 단위로 자른다
+  // 기준 시각. 앱이 넘기는 값이라 DB 시계와 무관하다. 초 단위로 자르는 것은 DB 가 마이크로초까지라서
   static final Instant NOW = Instant.now().truncatedTo(ChronoUnit.SECONDS).plusSeconds(3600);
 
   @Autowired
@@ -47,6 +47,16 @@ class JobRepositoryTest {
   }
 
   @Test
+  void 실행_시각은_앱이_넘긴_시각이다() {
+    Instant past = Instant.parse("2020-01-01T00:00:00Z");
+
+    long id = jobs.enqueue(repoId, SHA, past);
+
+    assertThat(nextRunAt(id)).isEqualTo(past);
+    assertThat(jobs.claimNext(past)).isPresent();
+  }
+
+  @Test
   void 같은_저장소를_다시_넣으면_같은_id() {
     assertThat(jobs.upsertRepository(new RepoRef("acme", "tool"))).isEqualTo(repoId);
   }
@@ -59,7 +69,7 @@ class JobRepositoryTest {
     for (int i = 0; i < 10; i++) {
       futures.add(pool.submit(() -> {
         start.await();
-        return jobs.enqueue(repoId, SHA);
+        return jobs.enqueue(repoId, SHA, NOW);
       }));
     }
     start.countDown();
@@ -75,7 +85,7 @@ class JobRepositoryTest {
 
   @Test
   void 꺼내면_RUNNING_이_되고_시도_횟수가_오른다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
 
     ClaimedJob claimed = jobs.claimNext(NOW.plusSeconds(1)).orElseThrow();
 
@@ -86,7 +96,7 @@ class JobRepositoryTest {
 
   @Test
   void 실행_시각이_아직이면_꺼내지_않는다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     jobs.reschedule(id, 1, NOW.plusSeconds(600), true);
 
@@ -96,7 +106,7 @@ class JobRepositoryTest {
 
   @Test
   void 두_워커가_동시에_꺼내도_한_작업은_한_워커만_받는다() throws Exception {
-    jobs.enqueue(repoId, SHA);
+    jobs.enqueue(repoId, SHA, Instant.now());
     ExecutorService pool = Executors.newFixedThreadPool(2);
     CountDownLatch start = new CountDownLatch(1);
     List<Future<Optional<ClaimedJob>>> futures = new ArrayList<>();
@@ -120,7 +130,7 @@ class JobRepositoryTest {
 
   @Test
   void 한도_초과로_미룰_때는_시도_횟수를_되돌린다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW.plusSeconds(1));
 
     jobs.reschedule(id, 1, NOW.plusSeconds(900), false);
@@ -132,7 +142,7 @@ class JobRepositoryTest {
 
   @Test
   void 결과_저장은_근거를_덮어쓰고_작업을_DONE_으로() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW.plusSeconds(1));
     var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A", true));
     var second = List.of(
@@ -153,8 +163,8 @@ class JobRepositoryTest {
 
   @Test
   void 오래_멈춘_작업은_다시_대기열로_시도_상한이면_FAILED() {
-    long retry = jobs.enqueue(repoId, SHA);
-    long exhausted = jobs.enqueue(repoId, "c".repeat(40));
+    long retry = jobs.enqueue(repoId, SHA, NOW);
+    long exhausted = jobs.enqueue(repoId, "c".repeat(40), NOW);
     jobs.claimNext(NOW);
     jobs.claimNext(NOW);
     jdbc.sql("update analysis_job set attempts = 3 where id = :id").param("id", exhausted).update();
@@ -168,7 +178,7 @@ class JobRepositoryTest {
 
   @Test
   void 실패로_끝내면_오류를_남긴다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
 
     assertThat(jobs.fail(id, 1, "저장소를 찾을 수 없습니다", NOW)).isTrue();
@@ -180,7 +190,7 @@ class JobRepositoryTest {
 
   @Test
   void 늦게_끝난_워커는_다른_워커의_작업을_덮어쓰지_못한다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     jobs.recoverStale(NOW.plusSeconds(1), 3, NOW.plusSeconds(2));
     assertThat(jobs.claimNext(NOW).orElseThrow().attempts()).isEqualTo(2);
@@ -197,7 +207,7 @@ class JobRepositoryTest {
 
   @Test
   void 결과_저장이_중간에_실패하면_이전_근거가_그대로_남는다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     var first = List.of(new Finding("SECRETS", "env.node", "a.js", 1, "process.env.A", true));
     jobs.recordPermissionResult(id, 1, first, "{}", "SKILL", NOW);
@@ -214,7 +224,7 @@ class JobRepositoryTest {
   @Test
   void 작업_8건을_8개_워커가_동시에_꺼내면_모두_서로_다른_작업() throws Exception {
     for (int i = 0; i < 8; i++) {
-      jobs.enqueue(repoId, String.valueOf(i).repeat(40));
+      jobs.enqueue(repoId, String.valueOf(i).repeat(40), Instant.now());
     }
     ExecutorService pool = Executors.newFixedThreadPool(8);
     CountDownLatch start = new CountDownLatch(1);
@@ -237,7 +247,7 @@ class JobRepositoryTest {
 
   @Test
   void 실패한_작업은_대기_시간이_지나야_다시_대기열로_가고_시도_횟수는_새로_센다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     jobs.fail(id, 1, "저장소를 찾을 수 없습니다", NOW);
 
@@ -258,7 +268,7 @@ class JobRepositoryTest {
 
   @Test
   void 다시_돈_작업의_중단_상한은_이번_회차_시도만_센다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     jdbc.sql("update analysis_job set attempts = 4, attempt_base = 3 where id = :id").param("id", id).update();
 
@@ -278,7 +288,7 @@ class JobRepositoryTest {
 
   @Test
   void 근거는_주요를_먼저_돌려준다() {
-    long id = jobs.enqueue(repoId, SHA);
+    long id = jobs.enqueue(repoId, SHA, NOW);
     jobs.claimNext(NOW);
     jobs.recordPermissionResult(id, 1, List.of(
         new Finding("NETWORK", "net.http_call", "tests/a.js", 1, "fetch(x)", false),
