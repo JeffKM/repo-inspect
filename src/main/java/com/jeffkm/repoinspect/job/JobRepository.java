@@ -67,14 +67,14 @@ public class JobRepository {
               set status = 'RUNNING', locked_at = :now, attempts = j.attempts + 1
               from picked
               where j.id = picked.id
-              returning j.id, j.repo_id, j.commit_sha, j.attempts
+              returning j.id, j.repo_id, j.commit_sha, j.attempts, j.attempt_base
             )
-            select upd.id, upd.commit_sha, upd.attempts, r.owner, r.name
+            select upd.id, upd.commit_sha, upd.attempts, upd.attempts - upd.attempt_base as round_attempts, r.owner, r.name
             from upd join repository r on r.id = upd.repo_id
             """)
         .param("now", ts(now))
         .query((rs, n) -> new ClaimedJob(rs.getLong("id"), new RepoRef(rs.getString("owner"), rs.getString("name")),
-            rs.getString("commit_sha"), rs.getInt("attempts")))
+            rs.getString("commit_sha"), rs.getInt("attempts"), rs.getInt("round_attempts")))
         .optional();
   }
 
@@ -103,6 +103,19 @@ public class JobRepository {
         .param("id", jobId)
         .param("claimed", claimedAttempts)
         .param("error", error)
+        .param("now", ts(now))
+        .update() == 1;
+  }
+
+  /** 실패한 지 충분히 지난 작업을 다시 대기열로. attempts 는 그대로 두어 이전 회차의 늦은 워커가 끼어들지 못하게 한다. */
+  public boolean requeueFailed(long jobId, Instant failedBefore, Instant now) {
+    return jdbc.sql("""
+            update analysis_job
+            set status = 'QUEUED', attempt_base = attempts, error = null, finished_at = null, next_run_at = :now
+            where id = :id and status = 'FAILED' and finished_at < :before
+            """)
+        .param("id", jobId)
+        .param("before", ts(failedBefore))
         .param("now", ts(now))
         .update() == 1;
   }
@@ -153,9 +166,9 @@ public class JobRepository {
   public int recoverStale(Instant lockedBefore, int maxAttempts, Instant now) {
     return jdbc.sql("""
             update analysis_job
-            set status = case when attempts >= :max then 'FAILED' else 'QUEUED' end,
-                error = case when attempts >= :max then '분석이 여러 번 중단되었습니다' else error end,
-                finished_at = case when attempts >= :max then :now else finished_at end,
+            set status = case when attempts - attempt_base >= :max then 'FAILED' else 'QUEUED' end,
+                error = case when attempts - attempt_base >= :max then '분석이 여러 번 중단되었습니다' else error end,
+                finished_at = case when attempts - attempt_base >= :max then :now else finished_at end,
                 locked_at = null
             where status = 'RUNNING' and locked_at < :before
             """)

@@ -217,3 +217,4 @@ GitHub API(REST 압축 파일, GraphQL 스타 표본) / Scorecard API / LLM API
 - 요청 시점에 GitHub 한도가 초과되면 503과 Retry-After로 답한다.
 - 오류 응답은 모두 ApiResponse로 감싼다.
 - 도메인 목록은 200개까지만 담고, 넘으면 `domainsTruncated`로 표시한다.
+- 실패(FAILED)한 커밋을 30분이 지난 뒤 다시 요청하면 대기열에 다시 넣는다. 시도 횟수(펜싱 값)는 되돌리지 않고 `attempt_base`로 회차를 나눠, 시도 상한 3회는 회차마다 다시 센다.

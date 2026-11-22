@@ -95,10 +95,11 @@ public class AnalysisWorker {
       settle(job, jobs.fail(job.id(), claimed, "저장소를 찾을 수 없습니다", now));
     } catch (Exception e) {
       log.warn("분석 실패 job={} attempt={}", job.id(), claimed, e);
-      if (claimed >= MAX_ATTEMPTS) {
+      int round = job.roundAttempts();
+      if (round >= MAX_ATTEMPTS) {
         settle(job, jobs.fail(job.id(), claimed, "분석에 " + MAX_ATTEMPTS + "번 실패했습니다", now));
       } else {
-        settle(job, jobs.reschedule(job.id(), claimed, now.plusSeconds(RETRY_BASE_SECONDS * claimed), true));
+        settle(job, jobs.reschedule(job.id(), claimed, now.plusSeconds(RETRY_BASE_SECONDS * round), true));
       }
     } finally {
       if (deadline != null) {

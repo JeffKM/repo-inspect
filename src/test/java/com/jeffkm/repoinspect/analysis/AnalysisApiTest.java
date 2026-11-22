@@ -109,6 +109,29 @@ class AnalysisApiTest {
   }
 
   @Test
+  void 실패한_지_30분이_지난_커밋을_다시_요청하면_다시_대기열로() throws Exception {
+    when(github.resolveHeadSha(any())).thenReturn(SHA);
+    String url = body("https://github.com/acme/tool");
+    long id = jobId(mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON).content(url))
+        .andReturn().getResponse().getContentAsString());
+    markFailed(id, "29 minutes");
+
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON).content(url))
+        .andExpect(jsonPath("$.data.status").value("FAILED"));
+
+    markFailed(id, "31 minutes");
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON).content(url))
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.data.jobId").value(id))
+        .andExpect(jsonPath("$.data.status").value("QUEUED"));
+  }
+
+  void markFailed(long id, String ago) {
+    jdbc.sql("update analysis_job set status = 'FAILED', error = '실패', finished_at = now() - cast(:ago as interval)"
+        + " where id = :id").param("ago", ago).param("id", id).update();
+  }
+
+  @Test
   void 잘못된_주소는_400() throws Exception {
     mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
             .content(body("https://gitlab.com/acme/tool")))

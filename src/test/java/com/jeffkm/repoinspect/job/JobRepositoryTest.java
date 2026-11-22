@@ -79,7 +79,7 @@ class JobRepositoryTest {
 
     ClaimedJob claimed = jobs.claimNext(NOW.plusSeconds(1)).orElseThrow();
 
-    assertThat(claimed).isEqualTo(new ClaimedJob(id, new RepoRef("acme", "tool"), SHA, 1));
+    assertThat(claimed).isEqualTo(new ClaimedJob(id, new RepoRef("acme", "tool"), SHA, 1, 1));
     assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("RUNNING");
     assertThat(jobs.claimNext(NOW.plusSeconds(1))).isEmpty();
   }
@@ -233,6 +233,38 @@ class JobRepositoryTest {
     pool.shutdown();
 
     assertThat(ids).hasSize(8);
+  }
+
+  @Test
+  void 실패한_작업은_대기_시간이_지나야_다시_대기열로_가고_시도_횟수는_새로_센다() {
+    long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
+    jobs.fail(id, 1, "저장소를 찾을 수 없습니다", NOW);
+
+    assertThat(jobs.requeueFailed(id, NOW, NOW)).isFalse();
+    assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("FAILED");
+
+    assertThat(jobs.requeueFailed(id, NOW.plusSeconds(1), NOW.plusSeconds(1801))).isTrue();
+    JobView view = jobs.findJob(id).orElseThrow();
+    assertThat(view.status()).isEqualTo("QUEUED");
+    assertThat(view.error()).isNull();
+
+    ClaimedJob again = jobs.claimNext(NOW.plusSeconds(1801)).orElseThrow();
+    assertThat(again.attempts()).isEqualTo(2);
+    assertThat(again.roundAttempts()).isEqualTo(1);
+    // 펜싱 값은 줄지 않으므로 이전 회차의 늦은 워커는 새 회차를 건드리지 못한다
+    assertThat(jobs.fail(id, 1, "늦은 실패", NOW)).isFalse();
+  }
+
+  @Test
+  void 다시_돈_작업의_중단_상한은_이번_회차_시도만_센다() {
+    long id = jobs.enqueue(repoId, SHA);
+    jobs.claimNext(NOW);
+    jdbc.sql("update analysis_job set attempts = 4, attempt_base = 3 where id = :id").param("id", id).update();
+
+    jobs.recoverStale(NOW.plusSeconds(1), 3, NOW.plusSeconds(700));
+
+    assertThat(jobs.findJob(id).orElseThrow().status()).isEqualTo("QUEUED");
   }
 
   int attempts(long id) {
