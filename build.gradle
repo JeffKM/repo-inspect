@@ -23,6 +23,7 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-jdbc'
   implementation 'org.springframework.boot:spring-boot-starter-validation'
   implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
   implementation 'org.flywaydb:flyway-core'
   implementation 'org.flywaydb:flyway-database-postgresql'
   runtimeOnly 'org.postgresql:postgresql'
@@ -41,4 +42,13 @@ dependencies {
 tasks.named('test') {
   useJUnitPlatform()
   systemProperty 'user.timezone', 'UTC'
+}
+
+// 배포 이미지가 이름으로 찾는다. plain jar 는 만들지 않는다
+tasks.named('bootJar') {
+  archiveFileName = 'repo-inspect.jar'
+}
+
+tasks.named('jar') {
+  enabled = false
 }

@@ -39,3 +39,15 @@ repo-inspect:
     poll-ms: 1000
     read-idle-seconds: 30            # 압축 파일 본문 바이트가 이 시간 동안 안 오면 끊는다
     read-deadline-seconds: 300       # 본문 전체를 읽는 시간 상한(끝없이 찔끔 오는 응답 방어)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health              # 컨테이너 상태 확인용만. 외부에는 Caddy 에서 막는다
+  endpoint:
+    health:
+      show-details: never
+  health:
+    redis:
+      enabled: false                 # Redis 장애는 요청 제한만 풀리므로 서버를 DOWN 으로 보지 않는다
