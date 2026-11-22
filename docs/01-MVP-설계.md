@@ -243,3 +243,11 @@ GitHub API(REST 압축 파일, GraphQL 스타 표본) / Scorecard API / LLM API
 - 클라이언트 IP는 앞단 프록시(사설 대역)가 준 `X-Forwarded-For`만 믿는다. 배포 때 프록시 주소가 사설 대역이 아니면 `server.tomcat.remoteip.internal-proxies`를 맞춰야 한다.
 - 이미지 data URI(png, jpeg, gif, webp)와 노트북 출력 이미지는 base64 난독화 근거에서 뺀다. 스크립트를 담을 수 있는 svg는 그대로 본다. `eval "$(curl …)"`, `source <(curl …)`, `| sudo -u root bash`도 설치 명령으로 찾는다.
 - 로컬 Redis는 `127.0.0.1:6381`에 띄운다.
+
+## 18. 구현에서 달라진 점(계획 4)
+
+- 결과에 분석 시각(`analyzedAt`), 고정 안내 문구(`notice`), 이의 제기 창구(`disputeUrl`, 설정값)를 붙인다.
+- 405는 `Allow`, 415는 `Accept` 헤더로 고칠 방법을 알린다. 잘못된 설정값이면 앱이 뜨지 않는다.
+- 배포는 서버 한 대의 docker compose(app, PostgreSQL, Redis, Caddy)다. 외부에는 Caddy의 80/443만 열고, 상태 확인(`/actuator/health`)은 컨테이너 안에서만 쓴다. 백업은 저장소 밖에 하루 한 번 남긴다. 절차는 `docs/02-배포.md`.
+- 클라이언트 IP는 Caddy가 실제 접속 IP로 채운다. 요청에 `X-Forwarded-For`를 넣어도 요청 제한 키가 바뀌지 않는 것을 로컬에서 확인했다.
+- CI는 GitHub Actions에서 `./run_tests.sh`를 돌린다.
