@@ -1,7 +1,7 @@
 # SITE_ADDRESS 가 도메인이면 Caddy 가 HTTPS 인증서를 자동으로 받는다. 로컬 확인은 http://localhost
 {$SITE_ADDRESS} {
   # 상태 확인은 컨테이너 안에서만 쓴다
-  respond /actuator/* 404
+  respond /actuator* 404
   # Caddy 는 들어온 X-Forwarded-For 를 믿지 않고 실제 접속 IP 로 채운다. app 은 사설 대역의 Caddy 만 믿는다
   reverse_proxy app:8080
 }

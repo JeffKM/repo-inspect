@@ -4,3 +4,5 @@ build/
 *.iml
 .env
 .run_tests.lock
+backup/
+*.sql.gz
