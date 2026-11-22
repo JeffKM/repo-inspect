@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: repo-inspect
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5434/repoinspect}
+    username: ${DB_USERNAME:repoinspect}
+    password: ${DB_PASSWORD:repoinspect}
+
+repo-inspect:
+  github:
+    base-url: https://api.github.com
+    token: ${GITHUB_TOKEN:}
+    max-tarball-bytes: 52428800      # 받는 압축 파일 상한 50MB
+  archive:
+    max-total-bytes: 209715200       # 풀린 전체 크기 상한 200MB(압축 폭탄 방어)
+    max-files: 5000
+    max-file-bytes: 1048576          # 파일 하나 1MB 넘으면 읽지 않음
+  worker:
+    enabled: true
+    poll-ms: 1000

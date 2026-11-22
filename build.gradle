@@ -1,0 +1,43 @@
+plugins {
+  id 'java'
+  id 'org.springframework.boot' version '3.5.7'
+  id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.jeffkm'
+version = '0.0.1-SNAPSHOT'
+description = 'AI 도구 저장소 설치 전 점검 서비스'
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(17)
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+  implementation 'org.springframework.boot:spring-boot-starter-validation'
+  implementation 'org.flywaydb:flyway-core'
+  implementation 'org.flywaydb:flyway-database-postgresql'
+  runtimeOnly 'org.postgresql:postgresql'
+  // GitHub 압축 파일(tar.gz)을 디스크에 풀지 않고 스트림으로 읽는다
+  implementation 'org.apache.commons:commons-compress:1.27.1'
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
+  testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+  testImplementation 'org.testcontainers:junit-jupiter'
+  testImplementation 'org.testcontainers:postgresql'
+  // GitHub API 대역: 한도 초과, 404, 리다이렉트를 재현한다
+  testImplementation 'org.wiremock:wiremock-standalone:3.9.1'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+  systemProperty 'user.timezone', 'UTC'
+}
