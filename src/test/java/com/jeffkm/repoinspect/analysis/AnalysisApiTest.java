@@ -19,6 +19,7 @@ import com.jeffkm.repoinspect.github.RepoNotFoundException;
 import com.jeffkm.repoinspect.job.AnalysisWorker;
 import com.jeffkm.repoinspect.support.PostgresTestConfig;
 import com.jeffkm.repoinspect.support.TarGz;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -153,7 +154,16 @@ class AnalysisApiTest {
   void 숫자가_아닌_번호는_400() throws Exception {
     mvc.perform(get("/api/analyses/abc"))
         .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value("요청 형식이 올바르지 않습니다"))
         .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void 없는_경로는_404() throws Exception {
+    mvc.perform(get("/api/unknown"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error").value("찾을 수 없는 주소입니다"));
   }
 
   @Test
@@ -188,7 +198,7 @@ class AnalysisApiTest {
             .content(body("https://github.com/acme/tool")))
         .andExpect(status().isInternalServerError())
         .andExpect(jsonPath("$.success").value(false))
-        .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
     assertThat(res).doesNotContain("내부 비밀");
   }
 

@@ -4,14 +4,17 @@ import com.jeffkm.repoinspect.github.GitHubException;
 import com.jeffkm.repoinspect.github.InvalidRepoUrlException;
 import com.jeffkm.repoinspect.github.RateLimitedException;
 import com.jeffkm.repoinspect.github.RepoNotFoundException;
+import jakarta.servlet.ServletException;
 import java.time.Clock;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -77,8 +80,19 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(ResponseStatusException.class)
   ResponseEntity<ApiResponse<Void>> status(ResponseStatusException e) {
-    String reason = e.getReason() != null ? e.getReason() : HttpStatus.valueOf(e.getStatusCode().value()).getReasonPhrase();
+    HttpStatus resolved = HttpStatus.resolve(e.getStatusCode().value());
+    String reason = e.getReason() != null ? e.getReason()
+        : resolved != null ? resolved.getReasonPhrase() : "요청을 처리할 수 없습니다";
     return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.fail(reason));
+  }
+
+  /** 그 밖의 스프링 MVC 예외(없는 경로, 406, 필수 파라미터 누락 등). 상태 코드는 예외가 가진 값을 따른다. */
+  @ExceptionHandler(ServletException.class)
+  ResponseEntity<ApiResponse<Void>> mvcError(ServletException e) {
+    HttpStatusCode code = e instanceof ErrorResponse er ? er.getStatusCode() : HttpStatus.BAD_REQUEST;
+    log.debug("요청 처리 불가: {}", e.toString());
+    String message = code.value() == 404 ? "찾을 수 없는 주소입니다" : "요청을 처리할 수 없습니다";
+    return ResponseEntity.status(code).body(ApiResponse.fail(message));
   }
 
   /** 예상 못 한 오류. 내부 메시지는 로그에만 남기고 응답은 고정 문구. */
