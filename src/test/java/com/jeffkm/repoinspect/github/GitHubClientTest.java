@@ -1,0 +1,138 @@
+package com.jeffkm.repoinspect.github;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.jeffkm.repoinspect.archive.LimitExceededException;
+import java.io.InputStream;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class GitHubClientTest {
+
+  static final String SHA = "a".repeat(40);
+  static final RepoRef REPO = new RepoRef("acme", "tool");
+  static final Instant NOW = Instant.parse("2026-11-22T00:00:00Z");
+
+  WireMockServer server;
+
+  @BeforeEach
+  void start() {
+    server = new WireMockServer(wireMockConfig().dynamicPort());
+    server.start();
+  }
+
+  @AfterEach
+  void stop() {
+    server.stop();
+  }
+
+  GitHubClient client(String token, long maxTarballBytes) {
+    return new GitHubClient(new GitHubProperties(server.baseUrl(), token, maxTarballBytes),
+        Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
+  }
+
+  @Test
+  void 기본_브랜치의_최신_커밋_SHA_를_얻는다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main")
+        .withHeader("Accept", equalTo("application/vnd.github.sha"))
+        .willReturn(aResponse().withStatus(200).withBody(SHA)));
+
+    assertThat(client("secret", 1000).resolveHeadSha(REPO)).isEqualTo(SHA);
+    server.verify(getRequestedFor(urlEqualTo("/repos/acme/tool")).withHeader("Authorization", equalTo("Bearer secret")));
+  }
+
+  @Test
+  void 토큰이_없으면_인증_헤더를_보내지_않는다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main").willReturn(aResponse().withStatus(200).withBody(SHA)));
+
+    client("", 1000).resolveHeadSha(REPO);
+
+    assertThat(server.findAll(getRequestedFor(urlEqualTo("/repos/acme/tool"))).get(0).containsHeader("Authorization"))
+        .isFalse();
+  }
+
+  @Test
+  void 없는_저장소는_RepoNotFoundException() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(404)));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO)).isInstanceOf(RepoNotFoundException.class);
+  }
+
+  @Test
+  void 한도_초과_403_은_재설정_시각을_담아_RateLimitedException() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "0")
+        .withHeader("x-ratelimit-reset", String.valueOf(NOW.getEpochSecond() + 900))));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(900)));
+  }
+
+  @Test
+  void 보조_한도_429_는_Retry_After_를_따른다() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(429).withHeader("retry-after", "30")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(RateLimitedException.class,
+            e -> assertThat(e.resetAt()).isEqualTo(NOW.plusSeconds(30)));
+  }
+
+  @Test
+  void 한도가_남은_403_은_일반_오류() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(403)
+        .withHeader("x-ratelimit-remaining", "10")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO))
+        .isInstanceOfSatisfying(GitHubException.class, e -> assertThat(e.status()).isEqualTo(403));
+  }
+
+  @Test
+  void SHA_형식이_아니면_오류() {
+    server.stubFor(get("/repos/acme/tool").willReturn(aResponse().withStatus(200)
+        .withBody("{\"default_branch\": \"main\"}")));
+    server.stubFor(get("/repos/acme/tool/commits/main").willReturn(aResponse().withStatus(200).withBody("<html>")));
+
+    assertThatThrownBy(() -> client("", 1000).resolveHeadSha(REPO)).isInstanceOf(GitHubException.class);
+  }
+
+  @Test
+  void 압축_파일은_리다이렉트를_따라가서_받는다() throws Exception {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(302)
+        .withHeader("Location", server.baseUrl() + "/codeload/acme/tool/" + SHA)));
+    server.stubFor(get("/codeload/acme/tool/" + SHA).willReturn(aResponse().withStatus(200).withBody("tarbytes")));
+
+    try (InputStream in = client("", 1000).openTarball(REPO, SHA)) {
+      assertThat(new String(in.readAllBytes())).isEqualTo("tarbytes");
+    }
+  }
+
+  @Test
+  void 압축_파일이_상한을_넘으면_읽다가_멈춘다() {
+    server.stubFor(get("/repos/acme/tool/tarball/" + SHA).willReturn(aResponse().withStatus(200)
+        .withBody("x".repeat(100))));
+
+    assertThatThrownBy(() -> {
+      try (InputStream in = client("", 10).openTarball(REPO, SHA)) {
+        in.readAllBytes();
+      }
+    }).isInstanceOf(LimitExceededException.class);
+  }
+}
