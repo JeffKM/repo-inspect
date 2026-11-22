@@ -60,3 +60,7 @@ curl -s -X POST localhost:8080/api/analyses -H 'Content-Type: application/json' 
 ```
 
 Testcontainers 로 PostgreSQL 과 Redis 를 띄우므로 Docker 가 실행 중이어야 합니다.
+
+## 라이선스
+
+[MIT](LICENSE)
