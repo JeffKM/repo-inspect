@@ -2,9 +2,12 @@ package com.jeffkm.repoinspect.analysis;
 
 import com.jeffkm.repoinspect.github.EmptyRepositoryException;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.oneOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -221,6 +224,7 @@ class AnalysisApiTest {
   void 지원하지_않는_메서드는_405() throws Exception {
     mvc.perform(delete("/api/analyses"))
         .andExpect(status().isMethodNotAllowed())
+        .andExpect(header().string("Allow", containsString("POST")))
         .andExpect(jsonPath("$.success").value(false));
   }
 
@@ -228,7 +232,21 @@ class AnalysisApiTest {
   void JSON이_아닌_본문은_415() throws Exception {
     mvc.perform(post("/api/analyses").contentType(MediaType.TEXT_PLAIN).content("x"))
         .andExpect(status().isUnsupportedMediaType())
+        .andExpect(header().string("Accept", containsString("application/json")))
         .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  void Retry_After_는_남은_초이고_이미_지난_시각이면_1초() throws Exception {
+    when(github.resolveHeadSha(any())).thenThrow(new RateLimitedException(Instant.now().plusSeconds(120)));
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/tool")))
+        .andExpect(header().string("Retry-After", oneOf("119", "120")));
+
+    doThrow(new RateLimitedException(Instant.now().minusSeconds(30))).when(github).resolveHeadSha(any());
+    mvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+            .content(body("https://github.com/acme/tool")))
+        .andExpect(header().string("Retry-After", "1"));
   }
 
   @Test

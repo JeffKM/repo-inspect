@@ -84,12 +84,16 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
   ResponseEntity<ApiResponse<Void>> methodNotAllowed(HttpRequestMethodNotSupportedException e) {
-    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.fail("지원하지 않는 요청 방식입니다"));
+    // 허용하는 메서드를 Allow 로 알린다
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(e.getHeaders())
+        .body(ApiResponse.fail("지원하지 않는 요청 방식입니다"));
   }
 
   @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
   ResponseEntity<ApiResponse<Void>> unsupportedMediaType(HttpMediaTypeNotSupportedException e) {
-    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiResponse.fail("JSON 형식으로 보내 주세요"));
+    // 받을 수 있는 형식을 Accept 로 알린다
+    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).headers(e.getHeaders())
+        .body(ApiResponse.fail("JSON 형식으로 보내 주세요"));
   }
 
   @ExceptionHandler(ResponseStatusException.class)
