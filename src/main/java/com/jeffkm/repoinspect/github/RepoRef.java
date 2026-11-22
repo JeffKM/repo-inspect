@@ -8,6 +8,13 @@ public record RepoRef(String owner, String name) {
   private static final Pattern PART = Pattern.compile("[A-Za-z0-9_.-]{1,100}");
   private static final String HOST = "github.com/";
 
+  /** 생성자로도 만들 수 있으므로 여기서 검증해 신뢰 경계를 막는다. */
+  public RepoRef {
+    if (owner == null || name == null || !valid(owner) || !valid(name)) {
+      throw new IllegalArgumentException("저장소 이름 형식이 올바르지 않습니다");
+    }
+  }
+
   public static RepoRef parse(String input) {
     if (input == null || input.isBlank()) {
       throw new IllegalArgumentException("저장소 주소가 비었습니다");
@@ -23,9 +30,6 @@ public record RepoRef(String owner, String name) {
     }
     String owner = parts[0];
     String name = parts[1].replaceFirst("\\.git$", "");
-    if (!valid(owner) || !valid(name)) {
-      throw new IllegalArgumentException("저장소 이름 형식이 올바르지 않습니다");
-    }
     return new RepoRef(owner, name);
   }
 

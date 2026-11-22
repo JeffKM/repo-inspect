@@ -39,14 +39,34 @@ class RepoRefTest {
       "https://github.com/",
       "https://github.com/acme/..",
       "https://github.com/ac me/tool",
-      "https://evil.com/github.com/acme/tool"
+      "https://evil.com/github.com/acme/tool",
+      "https://github.com@evil.com/acme/tool",
+      "github.com.evil.com/acme/tool",
+      "https://github.com/../tool",
+      "github.com/acme/.git",
+      "github.com/%2e%2e/tool",
+      "github.com/acme\\tool",
+      "github.com//acme/tool"
   })
   void 잘못된_주소는_거절한다(String input) {
     assertThatThrownBy(() -> RepoRef.parse(input)).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
+  void 이름이_100자를_넘으면_거절한다() {
+    assertThatThrownBy(() -> RepoRef.parse("github.com/acme/" + "a".repeat(101)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void null_은_거절한다() {
     assertThatThrownBy(() -> RepoRef.parse(null)).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void 생성자로_만든_검증되지_않은_값도_거절한다() {
+    assertThatThrownBy(() -> new RepoRef("..", "x")).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new RepoRef("acme", null)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new RepoRef("ac me", "tool")).isInstanceOf(IllegalArgumentException.class);
   }
 }
