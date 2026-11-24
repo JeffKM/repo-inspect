@@ -1,6 +1,8 @@
 package com.jeffkm.repoinspect.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -35,7 +38,7 @@ class AnalysisEventsTest {
 
   @Autowired
   MockMvc mvc;
-  @Autowired
+  @MockitoSpyBean
   JobRepository jobs;
   @Autowired
   JobEvents events;
@@ -125,6 +128,23 @@ class AnalysisEventsTest {
         .andExpect(status().isServiceUnavailable())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.success").value(false));
+    assertThat(events.subscriberCount()).isEqualTo(2);
+  }
+
+  @Test
+  void 상태_조회_중에_새로_구독한_작업은_닫지_않는다() throws Exception {
+    long first = job('f');
+    open(first);
+    long late = job('g');
+    // 조회가 끝나기 전에 새 작업이 구독하는 상황을 만든다
+    doAnswer(inv -> {
+      Object statuses = inv.callRealMethod();
+      events.subscribe(late, "QUEUED");
+      return statuses;
+    }).when(jobs).findStatuses(anyCollection());
+
+    events.push();
+
     assertThat(events.subscriberCount()).isEqualTo(2);
   }
 }

@@ -2,6 +2,7 @@ package com.jeffkm.repoinspect.analysis;
 
 import com.jeffkm.repoinspect.job.JobRepository;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -62,8 +63,14 @@ public class JobEvents {
     if (subs.isEmpty()) {
       return;
     }
-    Map<Long, String> statuses = jobs.findStatuses(subs.keySet());
-    subs.forEach((jobId, set) -> {
+    // 조회 뒤에 구독된 작업이 "없는 작업"으로 닫히지 않게 id 를 한 번만 떠서 조회와 순회에 같이 쓴다
+    List<Long> ids = List.copyOf(subs.keySet());
+    Map<Long, String> statuses = jobs.findStatuses(ids);
+    for (Long jobId : ids) {
+      Set<Subscription> set = subs.get(jobId);
+      if (set == null) {
+        continue;
+      }
       String status = statuses.get(jobId);
       for (Subscription sub : set) {
         if (status == null) {
@@ -72,7 +79,7 @@ public class JobEvents {
           sub.offer(status);
         }
       }
-    });
+    }
   }
 
   int subscriberCount() {
