@@ -54,6 +54,18 @@ curl -s -X POST localhost:8080/api/analyses -H 'Content-Type: application/json' 
 
 토큰 없이도 돌지만 GitHub 비인증 한도(시간당 60회)에 금방 걸립니다.
 
+### 웹 화면
+
+필요한 것: Node 24.
+
+```bash
+cd web
+npm install
+npm run dev        # http://localhost:3000, API 는 기본 http://localhost:8080
+```
+
+API 주소를 바꾸려면 `NEXT_PUBLIC_API_BASE` 를 준다. 브라우저가 API 를 직접 부르므로 API 의 `WEB_ORIGINS` 에 웹 주소가 들어 있어야 한다(기본 `http://localhost:3000`).
+
 ## 테스트
 
 ```bash
@@ -61,6 +73,12 @@ curl -s -X POST localhost:8080/api/analyses -H 'Content-Type: application/json' 
 ```
 
 Testcontainers 로 PostgreSQL 과 Redis 를 띄우므로 Docker 가 실행 중이어야 합니다.
+
+웹:
+
+```bash
+cd web && npm test
+```
 
 ## 라이선스
 
