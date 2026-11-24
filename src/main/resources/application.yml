@@ -21,6 +21,7 @@ server:
   forward-headers-strategy: native
 
 repo-inspect:
+  web-origins: ${WEB_ORIGINS:http://localhost:3000}  # 브라우저에서 API 를 부르는 웹 화면 주소(쉼표로 여럿)
   rate-limit:
     analyses-per-minute: 10          # 같은 IP 의 분석 요청 1분 상한
   dispute-url: ${DISPUTE_URL:}      # 저장소 주인용 이의 제기 창구(비우면 응답에서 null)

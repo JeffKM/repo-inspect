@@ -13,6 +13,7 @@ services:
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD 가 필요합니다}
       GITHUB_TOKEN: ${GITHUB_TOKEN:?GITHUB_TOKEN 이 필요합니다}
       DISPUTE_URL: ${DISPUTE_URL:-}
+      WEB_ORIGINS: ${WEB_ORIGINS:-}
     depends_on:
       postgres:
         condition: service_healthy
