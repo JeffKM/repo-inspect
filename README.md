@@ -26,6 +26,7 @@ AI 도구 저장소(skills, hooks, MCP 서버, 플러그인)를 설치하기 전
 |---|---|
 | `POST /api/analyses` `{"url": "https://github.com/owner/repo"}` | 분석 요청. 202 와 작업 번호 |
 | `GET /api/analyses/{id}` | 진행 상태와 결과 |
+| `GET /api/analyses/{id}/events` | 진행 상태 SSE. `event: status`, `data: {"status": ...}`. 끝나면(DONE·PARTIAL·FAILED) 닫힘 |
 
 모든 응답은 `{"success": true|false, "data": ..., "error": ...}` 형태입니다. 오류면 `success` 가 false, `data` 가 null 이고 `error` 에 한국어 안내가 들어갑니다.
 
@@ -38,7 +39,7 @@ AI 도구 저장소(skills, hooks, MCP 서버, 플러그인)를 설치하기 전
 | 409 | 커밋이 없는 빈 저장소 |
 | 429 | 같은 IP 의 분석 요청이 1분 상한을 넘음(`Retry-After`) |
 | 502 | GitHub 응답 오류 |
-| 503 | GitHub 한도 초과(`Retry-After`) |
+| 503 | GitHub 한도 초과(`Retry-After`), 또는 SSE 구독자가 상한을 넘음 |
 
 ## 로컬 실행
 

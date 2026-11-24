@@ -10,6 +10,7 @@ import com.jeffkm.repoinspect.job.JobView;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -56,6 +57,15 @@ public class AnalysisService {
     boolean finished = "DONE".equals(v.status()) || "PARTIAL".equals(v.status());
     return new AnalysisView(v.id(), v.owner(), v.name(), v.commitSha(), v.status(), v.toolKind(), v.error(),
         jobs.findFindings(jobId), parse(v.permissionJson()), finished ? v.finishedAt() : null, NOTICE, disputeUrl);
+  }
+
+  /** SSE 구독을 시작할 때 쓴다. 결과 본문은 읽지 않고 상태만. 없는 작업이면 404. */
+  public String status(long jobId) {
+    String status = jobs.findStatuses(List.of(jobId)).get(jobId);
+    if (status == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "분석을 찾을 수 없습니다");
+    }
+    return status;
   }
 
   private JsonNode parse(String json) {

@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/analyses")
@@ -24,9 +26,12 @@ public class AnalysisController {
 
   private final AnalysisRateLimiter limiter;
 
-  public AnalysisController(AnalysisService service, AnalysisRateLimiter limiter) {
+  private final JobEvents events;
+
+  public AnalysisController(AnalysisService service, AnalysisRateLimiter limiter, JobEvents events) {
     this.service = service;
     this.limiter = limiter;
+    this.events = events;
   }
 
   @PostMapping
@@ -42,5 +47,13 @@ public class AnalysisController {
   @GetMapping("/{id}")
   public ApiResponse<AnalysisView> get(@PathVariable long id) {
     return ApiResponse.ok(service.get(id));
+  }
+
+  // produces 를 걸지 않는다. 걸면 404·503 JSON 응답을 낼 수 없다
+  @GetMapping("/{id}/events")
+  public SseEmitter events(@PathVariable long id) {
+    return events.subscribe(id, service.status(id))
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+            "지금 지켜보는 사람이 많습니다. 잠시 뒤 새로 고침해 주세요"));
   }
 }

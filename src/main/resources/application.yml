@@ -2,7 +2,7 @@ spring:
   task:
     scheduling:
       pool:
-        size: 2                      # 복구 스케줄이 폴링에 막히지 않게
+        size: 3                      # 워커 폴링, 멈춘 작업 복구, SSE 푸시가 서로 막히지 않게
   application:
     name: repo-inspect
   data:
@@ -40,6 +40,10 @@ repo-inspect:
     poll-ms: 1000
     read-idle-seconds: 30            # 압축 파일 본문 바이트가 이 시간 동안 안 오면 끊는다
     read-deadline-seconds: 300       # 본문 전체를 읽는 시간 상한(끝없이 찔끔 오는 응답 방어)
+  events:
+    poll-ms: 1000                    # SSE 구독 중인 작업 상태를 읽는 주기
+    timeout-seconds: 600             # 스트림 하나의 최대 시간. 넘으면 화면이 다시 연결하거나 폴링한다
+    max-subscribers: 500             # 동시에 열린 SSE 상한. 넘으면 503
 
 management:
   endpoints:

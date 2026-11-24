@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
@@ -101,7 +102,7 @@ public class GlobalExceptionHandler {
     HttpStatus resolved = HttpStatus.resolve(e.getStatusCode().value());
     String reason = e.getReason() != null ? e.getReason()
         : resolved != null ? resolved.getReasonPhrase() : "요청을 처리할 수 없습니다";
-    return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.fail(reason));
+    return ResponseEntity.status(e.getStatusCode()).contentType(MediaType.APPLICATION_JSON).body(ApiResponse.fail(reason));
   }
 
   /** 그 밖의 스프링 MVC 예외(없는 경로, 406, 필수 파라미터 누락 등). 상태 코드는 예외가 가진 값을 따른다. */

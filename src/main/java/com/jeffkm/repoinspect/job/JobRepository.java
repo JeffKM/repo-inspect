@@ -5,7 +5,10 @@ import com.jeffkm.repoinspect.permission.Finding;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -211,6 +214,20 @@ public class JobRepository {
         .query((rs, n) -> new Finding(rs.getString("category"), rs.getString("rule_id"), rs.getString("file_path"),
             rs.getInt("line"), rs.getString("snippet"), rs.getBoolean("is_primary")))
         .list();
+  }
+
+  /** SSE 구독 중인 작업들의 지금 상태를 한 번에 읽는다. 없는 id 는 결과에서 빠진다. */
+  public Map<Long, String> findStatuses(Collection<Long> ids) {
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<Long, String> out = new HashMap<>();
+    jdbc.sql("select id, status from analysis_job where id in (:ids)")
+        .param("ids", List.copyOf(ids))
+        .query(rs -> {
+          out.put(rs.getLong("id"), rs.getString("status"));
+        });
+    return out;
   }
 
   // PostgreSQL 드라이버는 Instant 를 직접 받지 못한다
