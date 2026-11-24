@@ -1,6 +1,7 @@
 import type { Analysis, Finding } from "@/lib/api";
 import { categoryRank, groupFindings, lineUrl } from "@/lib/findings";
 import { categoryLabel, formatKst, isTerminal, statusLabel, toolKindLabels } from "@/lib/labels";
+import { reveal } from "@/lib/reveal";
 import { JobProgress } from "./JobProgress";
 
 function FindingItems({ a, items }: { a: Analysis; items: Finding[] }) {
@@ -10,12 +11,12 @@ function FindingItems({ a, items }: { a: Analysis; items: Finding[] }) {
         <li key={`${f.filePath}:${f.line}:${f.ruleId}:${i}`} className="rounded border border-zinc-200 p-3">
           <div className="flex flex-wrap justify-between gap-2 text-sm">
             <a href={lineUrl(a, f)} className="font-mono break-all hover:underline">
-              {f.filePath}:{f.line}
+              {reveal(f.filePath)}:{f.line}
             </a>
             <span className="text-zinc-500">{f.ruleId}</span>
           </div>
           <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-2 text-xs break-all whitespace-pre-wrap">
-            <code>{f.snippet}</code>
+            <code>{reveal(f.snippet)}</code>
           </pre>
         </li>
       ))}
@@ -90,7 +91,7 @@ export function AnalysisResult({ a }: { a: Analysis }) {
             {p.secondaryFindings > 0 && (
               <li>테스트·예제·문서 폴더에서 나온 참고 근거 {p.secondaryFindings}개는 범주별 목록 아래에 접어 두었습니다.</li>
             )}
-            {p.submodules.length > 0 && <li>하위 모듈은 분석하지 않았습니다: {p.submodules.join(", ")}</li>}
+            {p.submodules.length > 0 && <li>하위 모듈은 분석하지 않았습니다: {reveal(p.submodules.join(", "))}</li>}
           </ul>
         </section>
       )}
@@ -103,7 +104,7 @@ export function AnalysisResult({ a }: { a: Analysis }) {
           <ul className="flex flex-wrap gap-2 font-mono text-sm">
             {p.domains.map((d) => (
               <li key={d} className="rounded bg-zinc-100 px-2 py-0.5">
-                {d}
+                {reveal(d)}
               </li>
             ))}
           </ul>
